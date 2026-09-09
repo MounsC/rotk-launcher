@@ -22,6 +22,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { windowsSystemToolPath } from "./windows-tools.js";
+
 const execFileAsync = promisify(execFile);
 
 /** The persisted key name in the platform provider; stable across launches. */
@@ -79,8 +81,10 @@ export function parseTpmSignOutput(stdout: string): { publicKey: string; signatu
 export async function collectTpmProof(nonce: string): Promise<TpmProof | null> {
   if (process.platform !== "win32" || typeof nonce !== "string" || nonce === "") return null;
   try {
+    // Absolute path: a `powershell.exe` earlier on the user's PATH must not get
+    // to answer with a software key and call it the TPM.
     const { stdout } = await execFileAsync(
-      "powershell",
+      windowsSystemToolPath("powershell"),
       ["-NoProfile", "-NonInteractive", "-Command", SIGN_SCRIPT],
       { windowsHide: true, timeout: 12_000, env: { ...process.env, ROTK_TPM_NONCE: nonce } },
     );
