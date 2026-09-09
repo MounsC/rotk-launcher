@@ -255,6 +255,13 @@ export function challengeSigningInput(challenge: {
   nonce: string;
   policyVersion: string;
   expiresAt: string;
+  /**
+   * The fingerprint slots the server asks this launch for (#320 §B). Signed
+   * with the rest, so a spoofed backend cannot choose what the machine
+   * discloses. Absent on a challenge from a server that names none, and then
+   * the bytes are exactly what they were before the pool existed.
+   */
+  hwidSlots?: readonly string[];
 }): string {
   return [
     CHALLENGE_DOMAIN,
@@ -262,7 +269,33 @@ export function challengeSigningInput(challenge: {
     challenge.nonce,
     challenge.policyVersion,
     challenge.expiresAt,
+    ...(challenge.hwidSlots === undefined ? [] : [challenge.hwidSlots.join(",")]),
   ].join("\0");
+}
+
+/** A fingerprint slot name as the server spells them: lowercase snake case. */
+export const HWID_SLOT_NAME = /^[a-z0-9_]{1,40}$/;
+
+/**
+ * MIRROR NOTICE: duplicated byte for byte in the server's `tpmProof.ts`. What
+ * the TPM key signs from launcher 2.0.12 on (#320 §C): the single-use
+ * challengeId and the fingerprint vector exactly as the ticket body carries it
+ * — raw strings, keys sorted, string values only — so a HWID cannot be swapped
+ * under a genuine signature nor a genuine vector replayed under another
+ * machine's key. Both sides derive it from the same JSON; no normalisation may
+ * sit between them.
+ */
+export const TPM_BINDING_DOMAIN = "rotk-tpm-bind-v1";
+export function tpmBindingMessage(challengeId: string, hwid: unknown): string {
+  const entries: string[] = [];
+  if (hwid !== null && typeof hwid === "object" && !Array.isArray(hwid)) {
+    const vector = hwid as Record<string, unknown>;
+    for (const key of Object.keys(vector).sort()) {
+      const value = vector[key];
+      if (typeof value === "string") entries.push(`${key}=${value}`);
+    }
+  }
+  return [TPM_BINDING_DOMAIN, challengeId, ...entries].join("\0");
 }
 
 /**
@@ -341,6 +374,19 @@ export const ATTESTATION_TEST_VECTORS = Object.freeze({
       { path: "Resources/Assets/Assets_x64_0.pack2", size: 1, sha256: "a".repeat(64) },
     ]),
     expectedRoot: "09e1c2c3aa522584c69b4eaa768c7d09a7f8a3467fa1359eae8482875c849a1c",
+  }),
+  // tpmBindingMessage (#320 §C): raw strings, keys sorted, string values only,
+  // NUL-joined behind the domain and the challengeId. Mirrored in the server's
+  // attestationVerdict.ts.
+  tpmBinding: Object.freeze({
+    challengeId: "7c9e6679742540de944be07fc1f90ae7",
+    hwid: Object.freeze({
+      volume_serial: "1A2B3C4D",
+      machine_guid: "3F2504E0-4F89-41D3-9A0C-0305E82C3301",
+      ignored: 5,
+    }),
+    expectedMessage: "rotk-tpm-bind-v1\0" + "7c9e6679742540de944be07fc1f90ae7\0"
+      + "machine_guid=3F2504E0-4F89-41D3-9A0C-0305E82C3301\0" + "volume_serial=1A2B3C4D",
   }),
   evidence: Object.freeze({
     nonce: "dGVzdC1ub25jZS0xMjM0NTY3ODkw",

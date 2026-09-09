@@ -20,6 +20,7 @@ import { createReadStream } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import {
+  HWID_SLOT_NAME,
   computeAttestationEvidence,
   computeManifestRoot,
   challengeSigningInput,
@@ -49,6 +50,11 @@ export interface AttestationChallenge {
   expiresAt: string;
   keyId: string;
   signature: string;
+  /**
+   * The fingerprint slots this launch is asked for (#320 §B), covered by the
+   * signature. Absent from a server that names none: then the core five.
+   */
+  hwidSlots?: string[];
 }
 
 export interface AttestationProgress {
@@ -145,7 +151,22 @@ function parseChallenge(
       throw attestationError("Invalid attestation challenge");
     }
   }
-  const challenge = {
+  // The slot list is optional but, when present, strict: a bounded list of
+  // distinct slot names. It is part of the signed bytes below, so a list a
+  // spoofed backend edits in transit fails the signature check.
+  let hwidSlots: string[] | undefined;
+  if (value.hwidSlots !== undefined) {
+    const raw = value.hwidSlots;
+    if (
+      !Array.isArray(raw) || raw.length === 0 || raw.length > 40
+      || !raw.every((slot) => typeof slot === "string" && HWID_SLOT_NAME.test(slot))
+      || new Set(raw).size !== raw.length
+    ) {
+      throw attestationError("Invalid attestation challenge");
+    }
+    hwidSlots = [...(raw as string[])];
+  }
+  const challenge: AttestationChallenge = {
     challengeId: value.challengeId as string,
     nonce: value.nonce as string,
     policyVersion: value.policyVersion as string,
@@ -155,6 +176,7 @@ function parseChallenge(
     expiresAt: value.expiresAt as string,
     keyId: value.keyId as string,
     signature: value.signature as string,
+    ...(hwidSlots === undefined ? {} : { hwidSlots }),
   };
   if (Number.isNaN(Date.parse(challenge.expiresAt))) {
     throw attestationError("Invalid attestation challenge");

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  HWID_CORE_SLOTS,
+  HWID_KNOWN_SLOTS,
+  buildHwidScript,
   cleanComponent,
   collectHwid,
-  parseCimValue,
-  parseMachineGuid,
-  type MachineIdentitySources,
+  parseHwidOutput,
+  selectHwidSlots,
 } from "../electron/services/machine-identity";
 
 describe("machine identity parsing", () => {
@@ -17,49 +19,80 @@ describe("machine identity parsing", () => {
     expect(cleanComponent(null)).toBeUndefined();
   });
 
-  it("reads MachineGuid out of reg query output", () => {
-    const stdout = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography\r\n"
-      + "    MachineGuid    REG_SZ    3f2504e0-4f89-41d3-9a0c-0305e82c3301\r\n";
-    expect(parseMachineGuid(stdout)).toBe("3f2504e0-4f89-41d3-9a0c-0305e82c3301");
-    expect(parseMachineGuid("nothing here")).toBeUndefined();
+  it("reads the script's JSON, one cleaned value per requested slot", () => {
+    const stdout = "﻿{\"machine_guid\":\"3F2504E0-4F89-41D3-9A0C-0305E82C3301\",\"disk_serial\":\" S4EW NX0N \",\"bios_serial\":\"To be filled by O.E.M.\",\"gpu_name\":42,\"volume_serial\":\"1A2B3C4D\"}\r\n";
+    expect(parseHwidOutput(stdout, ["machine_guid", "disk_serial", "bios_serial", "gpu_name", "volume_serial", "cpu_name"]))
+      .toEqual({
+        machine_guid: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+        disk_serial: "s4ew nx0n",
+        volume_serial: "1a2b3c4d",
+      });
+    expect(parseHwidOutput("not json", ["machine_guid"])).toEqual({});
+    expect(parseHwidOutput("[1,2]", ["machine_guid"])).toEqual({});
+    expect(parseHwidOutput("", ["machine_guid"])).toEqual({});
+  });
+});
+
+describe("slot selection and script", () => {
+  it("knows the core five and the pool the server draws from", () => {
+    for (const slot of HWID_CORE_SLOTS) expect(HWID_KNOWN_SLOTS).toContain(slot);
+    for (const slot of ["bios_serial", "mac_addresses", "monitor_edid_serials", "cpu_processor_id", "os_install_date"]) {
+      expect(HWID_KNOWN_SLOTS).toContain(slot);
+    }
   });
 
-  it("reads a single expanded CIM value", () => {
-    expect(parseCimValue("\r\nBTXH-42-ABC \r\n")).toBe("btxh-42-abc");
-    expect(parseCimValue("   ")).toBeUndefined();
+  it("reads only the requested slots it knows, once each, in request order", () => {
+    expect(selectHwidSlots(["gpu_name", "machine_guid", "gpu_name", "tpm_manufacturer_id", "not a slot; rm -rf"]))
+      .toEqual(["gpu_name", "machine_guid"]);
+    expect(selectHwidSlots([])).toEqual([]);
+  });
+
+  it("builds one script with one guarded reader per slot and nothing from the request text", () => {
+    const script = buildHwidScript(["machine_guid", "cpu_name"]);
+    expect(script.startsWith("$ErrorActionPreference = 'Stop'\n$r = @{}\n")).toBe(true);
+    expect(script.endsWith("$r | ConvertTo-Json -Compress")).toBe(true);
+    expect(script).toContain("$r['machine_guid'] = $v");
+    expect(script).toContain("Win32_Processor");
+    expect(script).not.toContain("Win32_BIOS");
+    expect((script.match(/^try \{/gm) ?? []).length).toBe(2);
   });
 });
 
 describe("collectHwid", () => {
-  const sources = (over: Partial<MachineIdentitySources> = {}): MachineIdentitySources => ({
-    machineGuid: async () => "mg-1",
-    smbiosUuid: async () => "sm-2",
-    baseboardSerial: async () => "bb-3",
-    diskSerial: async () => "dk-4",
-    volumeSerial: async () => "vol-5",
-    ...over,
-  });
-
-  it("assembles the full vector", async () => {
+  it("runs the script for the requested known slots and returns the cleaned vector", async () => {
     if (process.platform !== "win32") return; // gated on win32; collector is a no-op elsewhere
-    const vector = await collectHwid(sources());
-    expect(vector).toEqual({
-      machine_guid: "mg-1", smbios_uuid: "sm-2", baseboard_serial: "bb-3",
-      disk_serial: "dk-4", volume_serial: "vol-5",
+    const scripts: string[] = [];
+    const vector = await collectHwid(["machine_guid", "bios_serial", "unknown_slot"], {
+      run: async (script) => {
+        scripts.push(script);
+        return JSON.stringify({ machine_guid: "MG-1", bios_serial: "BIOS-2", volume_serial: "not asked" });
+      },
     });
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toContain("$r['bios_serial']");
+    expect(scripts[0]).not.toContain("unknown_slot");
+    // A slot the script happens to print but nobody asked for is not answered.
+    expect(vector).toEqual({ machine_guid: "mg-1", bios_serial: "bios-2" });
   });
 
-  it("omits a component that fails or is empty, without throwing", async () => {
+  it("defaults to the core five", async () => {
     if (process.platform !== "win32") return;
-    const vector = await collectHwid(sources({
-      diskSerial: async () => { throw new Error("wmi failed"); },
-      volumeSerial: async () => undefined,
-    }));
-    expect(vector).toEqual({ machine_guid: "mg-1", smbios_uuid: "sm-2", baseboard_serial: "bb-3" });
+    let script = "";
+    await collectHwid(undefined, { run: async (s) => { script = s; return "{}"; } });
+    for (const slot of HWID_CORE_SLOTS) expect(script).toContain(`$r['${slot}']`);
+    expect(script).not.toContain("bios_serial");
+  });
+
+  it("asks nothing when no requested slot is known, and never throws", async () => {
+    if (process.platform !== "win32") return;
+    let ran = false;
+    expect(await collectHwid(["nope"], { run: async () => { ran = true; return "{}"; } })).toEqual({});
+    expect(ran).toBe(false);
+    expect(await collectHwid(["machine_guid"], { run: async () => { throw new Error("wmi failed"); } })).toEqual({});
   });
 
   it("returns an empty vector off Windows", async () => {
     if (process.platform === "win32") return;
-    expect(await collectHwid(sources())).toEqual({});
+    expect(await collectHwid(["machine_guid"], { run: async () => "{}" })).toEqual({});
   });
 });

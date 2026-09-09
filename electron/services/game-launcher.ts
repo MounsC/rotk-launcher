@@ -31,7 +31,17 @@ const GAME_STARTUP_STABILITY_MS = 3_000;
  *   the ticket route's opaque "update the launcher".
  */
 export type AttestationOutcome =
-  | { readonly status: "attested"; readonly block: unknown }
+  | {
+      readonly status: "attested";
+      readonly block: unknown;
+      /**
+       * The fingerprint read for the slots the challenge asked (#320 §B). It
+       * is what the TPM proof inside the block was signed over, so the ticket
+       * request must carry exactly this object and not a fingerprint read at
+       * another time.
+       */
+      readonly hwid?: Record<string, string>;
+    }
   | { readonly status: "not-applicable" }
   | { readonly status: "unavailable"; readonly reason: string };
 
@@ -83,7 +93,11 @@ function ticketRequestOptions(
 ): { attestation?: unknown; attestationUnavailableReason?: string; launcherVersion?: string; hwid?: Record<string, string> } {
   const base: { launcherVersion?: string; hwid?: Record<string, string> } = {};
   if (request.launcherVersion) base.launcherVersion = request.launcherVersion;
-  if (request.hwid && Object.keys(request.hwid).length > 0) base.hwid = request.hwid;
+  // An attested launch answers the slots its challenge named, and its TPM proof
+  // is bound to that exact vector; the fingerprint read before the launch is
+  // the fallback for a launch that could not attest.
+  const hwid = outcome.status === "attested" && outcome.hwid !== undefined ? outcome.hwid : request.hwid;
+  if (hwid && Object.keys(hwid).length > 0) base.hwid = hwid;
   if (outcome.status === "attested") return { ...base, attestation: outcome.block };
   if (outcome.status === "unavailable") {
     return { ...base, attestationUnavailableReason: outcome.reason };

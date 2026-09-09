@@ -1,17 +1,25 @@
 /**
  * Composite hardware fingerprint (Windows).
  *
- * The launcher collects a handful of stable machine identifiers and sends the
- * RAW values with the ticket request; the server keyed-hashes each and stores
- * only the digests (never the raw value, never on the launcher side either).
- * No single component is trusted — the server matches a HWID ban fuzzily, so
- * changing one serial does not evade it. This is a userland fingerprint on an
- * open-source launcher: a cost to ban evasion, not an unspoofable identity. The
- * TPM anchor (a separate, later change) is what raises that cost.
+ * The launcher reads the machine identifiers a launch is asked for and sends
+ * the RAW values with the ticket request; the server keyed-hashes each and
+ * stores only the digests (never the raw value, never on the launcher side
+ * either). No single component is trusted — the server matches a HWID ban
+ * fuzzily over identity slots, so changing one serial does not evade it.
  *
- * Every collector is best-effort: a component that cannot be read is simply
- * omitted, and an empty vector is valid (the machine just contributes no HWID
- * signal). Collection never throws into the launch path.
+ * Which slots: the five CORE slots every launch has always answered, plus the
+ * slots the signed attestation challenge names (#320 §B) — a random draw from a
+ * wider pool, different at every launch, so a fork that answers five constants
+ * is caught by the sixth question. A slot name from the server only ever
+ * selects an entry of SLOT_READERS below; it never reaches the shell.
+ *
+ * This is a userland fingerprint on an open-source launcher: a cost to ban
+ * evasion, not an unspoofable identity. The TPM anchor is what raises that
+ * cost, and from 2.0.12 its signature covers this vector (#320 §C).
+ *
+ * Every collector is best-effort: a slot that cannot be read is omitted, and
+ * an empty vector is valid (the machine just contributes no HWID signal).
+ * Collection never throws into the launch path.
  */
 
 import { execFile } from "node:child_process";
@@ -21,14 +29,43 @@ import { windowsSystemToolPath } from "./windows-tools.js";
 
 const execFileAsync = promisify(execFile);
 
-/** The fingerprint slots, matching the server's HWID_COMPONENTS. */
-export interface HwidVector {
-  machine_guid?: string;
-  smbios_uuid?: string;
-  baseboard_serial?: string;
-  disk_serial?: string;
-  volume_serial?: string;
-}
+/** The slots every launch answers; the server's HWID_CORE_COMPONENTS. */
+export const HWID_CORE_SLOTS = [
+  "machine_guid", "smbios_uuid", "baseboard_serial", "disk_serial", "volume_serial",
+] as const;
+
+/**
+ * Every slot this launcher can read, with the PowerShell expression that reads
+ * it. Fixed text only. Mirrors the server's HWID_COMPONENTS; a slot the server
+ * asks for that is missing here is simply not answered, and counts as missing
+ * on its side.
+ */
+const SLOT_READERS: Readonly<Record<string, string>> = Object.freeze({
+  machine_guid: "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name MachineGuid).MachineGuid",
+  smbios_uuid: "(Get-CimInstance Win32_ComputerSystemProduct).UUID",
+  baseboard_serial: "(Get-CimInstance Win32_BaseBoard).SerialNumber",
+  baseboard_product: "(Get-CimInstance Win32_BaseBoard).Product",
+  disk_serial: "(Get-CimInstance Win32_DiskDrive | Where-Object { $_.Index -eq 0 } | Select-Object -First 1).SerialNumber",
+  disk_model: "(Get-CimInstance Win32_DiskDrive | Where-Object { $_.Index -eq 0 } | Select-Object -First 1).Model",
+  disk_firmware: "(Get-CimInstance Win32_DiskDrive | Where-Object { $_.Index -eq 0 } | Select-Object -First 1).FirmwareRevision",
+  volume_serial: "(Get-CimInstance Win32_LogicalDisk -Filter \"DeviceID='$($env:SystemDrive)'\").VolumeSerialNumber",
+  bios_serial: "(Get-CimInstance Win32_BIOS).SerialNumber",
+  bios_version: "(Get-CimInstance Win32_BIOS).SMBIOSBIOSVersion",
+  bios_release_date: "(Get-CimInstance Win32_BIOS).ReleaseDate.ToString('yyyy-MM-dd')",
+  cpu_processor_id: "(Get-CimInstance Win32_Processor | Select-Object -First 1).ProcessorId",
+  cpu_name: "(Get-CimInstance Win32_Processor | Select-Object -First 1).Name",
+  ram_module_serials: "((Get-CimInstance Win32_PhysicalMemory | ForEach-Object { $_.SerialNumber } | Where-Object { $_ } | Sort-Object) -join ',')",
+  gpu_pnp_device_id: "(Get-CimInstance Win32_VideoController | Select-Object -First 1).PNPDeviceID",
+  gpu_name: "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name",
+  mac_addresses: "((Get-CimInstance Win32_NetworkAdapter -Filter 'PhysicalAdapter=True' | ForEach-Object { $_.MACAddress } | Where-Object { $_ } | Sort-Object -Unique) -join ',')",
+  monitor_edid_serials: "((Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID | ForEach-Object { -join ($_.SerialNumberID | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) } | Where-Object { $_ } | Sort-Object) -join ',')",
+  os_install_date: "(Get-CimInstance Win32_OperatingSystem).InstallDate.ToString('yyyy-MM-dd')",
+  enclosure_serial: "(Get-CimInstance Win32_SystemEnclosure | Select-Object -First 1).SerialNumber",
+  system_sku: "(Get-CimInstance Win32_ComputerSystem).SystemSKUNumber",
+});
+
+/** Every slot name this launcher knows how to read. */
+export const HWID_KNOWN_SLOTS: readonly string[] = Object.freeze(Object.keys(SLOT_READERS));
 
 /** Values a real machine never legitimately reports; dropped if seen. */
 const PLACEHOLDER_VALUES = new Set([
@@ -45,92 +82,86 @@ export function cleanComponent(value: string | undefined | null): string | undef
   return normalized;
 }
 
-/** MachineGuid from the `reg query` output for HKLM\SOFTWARE\Microsoft\Cryptography. */
-export function parseMachineGuid(stdout: string): string | undefined {
-  const match = stdout.match(/MachineGuid\s+REG_SZ\s+(.+)/i);
-  return cleanComponent(match?.[1]);
+/**
+ * The slots to read: the requested names this launcher knows, deduplicated,
+ * in request order. Unknown names are dropped silently — the server counts
+ * them as unanswered; nothing here guesses at what they might mean.
+ */
+export function selectHwidSlots(requested: readonly string[]): string[] {
+  const slots: string[] = [];
+  for (const slot of requested) {
+    if (Object.prototype.hasOwnProperty.call(SLOT_READERS, slot) && !slots.includes(slot)) slots.push(slot);
+  }
+  return slots;
 }
 
 /**
- * A single-value field from PowerShell CIM output. The collectors below ask for
- * exactly one property with `-ExpandProperty`, so the whole trimmed output is
- * the value.
+ * One PowerShell script reading every requested slot, each in its own
+ * try/catch so a broken WMI class costs its slot and nothing else, printing a
+ * compact JSON object. One process for the whole vector: ten slots do not mean
+ * ten shells.
  */
-export function parseCimValue(stdout: string): string | undefined {
-  return cleanComponent(stdout.split(/\r?\n/).map((line) => line.trim()).find((line) => line !== ""));
+export function buildHwidScript(slots: readonly string[]): string {
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    "$r = @{}",
+    ...slots.map((slot) =>
+      `try { $v = [string](${SLOT_READERS[slot]}); if ($v) { $r['${slot}'] = $v } } catch {}`),
+    "$r | ConvertTo-Json -Compress",
+  ].join("\n");
 }
 
-// Absolute paths, never bare names: a `reg.exe` or `powershell.exe` placed
-// earlier on the user's PATH would otherwise answer these queries itself.
-async function reg(path: string, value: string): Promise<string> {
-  const { stdout } = await execFileAsync(
-    windowsSystemToolPath("reg"),
-    ["query", path, "/v", value],
-    { windowsHide: true },
-  );
-  return stdout;
+/** The JSON the script prints, cleaned slot by slot. Anything unreadable is an empty vector. */
+export function parseHwidOutput(stdout: string, slots: readonly string[]): Record<string, string> {
+  const vector: Record<string, string> = {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout.replace(/^﻿/, "").trim() || "{}");
+  } catch {
+    return vector;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return vector;
+  const record = parsed as Record<string, unknown>;
+  for (const slot of slots) {
+    const value = record[slot];
+    const cleaned = cleanComponent(typeof value === "string" ? value : undefined);
+    if (cleaned !== undefined) vector[slot] = cleaned;
+  }
+  return vector;
 }
 
-async function cim(command: string): Promise<string> {
+async function runPowerShell(script: string, timeoutMs: number): Promise<string> {
+  // Absolute path, never a bare name: a `powershell.exe` earlier on the user's
+  // PATH would otherwise answer these queries itself. -EncodedCommand carries
+  // the fixed script without any quoting on the command line.
   const { stdout } = await execFileAsync(
     windowsSystemToolPath("powershell"),
-    ["-NoProfile", "-NonInteractive", "-Command", command],
-    { windowsHide: true, timeout: 8_000 },
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64")],
+    { windowsHide: true, timeout: timeoutMs, maxBuffer: 256 * 1024, encoding: "utf8" },
   );
   return stdout;
 }
 
-/** Overridable for tests; production reads the real machine. */
-export interface MachineIdentitySources {
-  machineGuid(): Promise<string | undefined>;
-  smbiosUuid(): Promise<string | undefined>;
-  baseboardSerial(): Promise<string | undefined>;
-  diskSerial(): Promise<string | undefined>;
-  volumeSerial(): Promise<string | undefined>;
-}
-
-const WINDOWS_SOURCES: MachineIdentitySources = {
-  machineGuid: async () =>
-    parseMachineGuid(await reg("HKLM\\SOFTWARE\\Microsoft\\Cryptography", "MachineGuid")),
-  smbiosUuid: async () =>
-    parseCimValue(await cim("(Get-CimInstance Win32_ComputerSystemProduct).UUID")),
-  baseboardSerial: async () =>
-    parseCimValue(await cim("(Get-CimInstance Win32_BaseBoard).SerialNumber")),
-  diskSerial: async () =>
-    parseCimValue(await cim(
-      "Get-CimInstance Win32_DiskDrive | Where-Object { $_.Index -eq 0 } "
-      + "| Select-Object -First 1 -ExpandProperty SerialNumber",
-    )),
-  volumeSerial: async () =>
-    parseCimValue(await cim(
-      "(Get-CimInstance Win32_LogicalDisk -Filter \"DeviceID='$($env:SystemDrive)'\").VolumeSerialNumber",
-    )),
-};
-
 /**
- * Collect the fingerprint. Each slot is gathered independently and a failing or
- * empty one is dropped. Non-Windows returns an empty vector (Linux/Proton is out
- * of scope for v1; the server treats the absence as no HWID signal).
+ * Collect the fingerprint for the requested slots (the core five by default).
+ * Non-Windows returns an empty vector (Linux/Proton is out of scope for v1;
+ * the server treats the absence as no HWID signal). Never throws: a shell that
+ * fails or times out yields the empty vector.
  */
 export async function collectHwid(
-  sources: MachineIdentitySources = WINDOWS_SOURCES,
+  requested: readonly string[] = HWID_CORE_SLOTS,
+  options: { run?: (script: string) => Promise<string>; timeoutMs?: number } = {},
 ): Promise<Record<string, string>> {
   if (process.platform !== "win32") return {};
-  const slots: [keyof HwidVector, () => Promise<string | undefined>][] = [
-    ["machine_guid", sources.machineGuid],
-    ["smbios_uuid", sources.smbiosUuid],
-    ["baseboard_serial", sources.baseboardSerial],
-    ["disk_serial", sources.diskSerial],
-    ["volume_serial", sources.volumeSerial],
-  ];
-  const vector: Record<string, string> = {};
-  await Promise.all(slots.map(async ([key, read]) => {
-    try {
-      const value = await read();
-      if (value !== undefined) vector[key] = value;
-    } catch {
-      // best-effort: a slot that cannot be read is simply absent.
-    }
-  }));
-  return vector;
+  const slots = selectHwidSlots(requested);
+  if (slots.length === 0) return {};
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const run = options.run ?? ((script: string) => runPowerShell(script, timeoutMs));
+  try {
+    return parseHwidOutput(await run(buildHwidScript(slots)), slots);
+  } catch {
+    // best-effort: no shell, no fingerprint, no failed launch.
+    return {};
+  }
 }
