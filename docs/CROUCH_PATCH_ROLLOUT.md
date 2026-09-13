@@ -13,7 +13,7 @@ The supported client is pinned to:
 - `H1Z1.exe` SHA-256:
   `5F5A4922B0671E4ED8FD415E753BE096EF7A17E360AE80E025F11544C8DB9261`;
 - Vivox+crouch proxy SHA-256:
-  `B364DA8637E425AACEB078071B034A7D91DFE7418B653355DF8E7B579118ED83`.
+  `D6009DC2CC7768D764C74A764715267F6648B98DA4CB6D189BBFCDE0F9012197`.
 
 The native hook also validates the BR1315 PE timestamp, image size and target
 machine-code signatures before modifying memory. An unknown client build is
@@ -47,7 +47,7 @@ mode=patch-v2
 animation=v12-ads-safe-cache256-lru2s-pose-only-js-sine-idle400-200-move250
 cameraScalePitch=disabled
 h1z1Sha256=5F5A4922B0671E4ED8FD415E753BE096EF7A17E360AE80E025F11544C8DB9261
-proxySha256=B364DA8637E425AACEB078071B034A7D91DFE7418B653355DF8E7B579118ED83
+proxySha256=D6009DC2CC7768D764C74A764715267F6648B98DA4CB6D189BBFCDE0F9012197
 ```
 
 The direct camera hook must remain disabled. The v12 hook replaces only the
