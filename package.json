@@ -36,7 +36,9 @@
     "build:diagnostics": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-diagnostics.ps1",
     "test:native:diagnostics": "node --test native/diagnostics/tests/integration.mjs",
     "verify:presentmon": "node scripts/verify-presentmon.mjs",
-    "pretest": "npm run test:assets:ranks",
+    "pretest": "npm run test:assets:ranks && npm run test:assets:staff-voice",
+    "test:assets:staff-voice": "node --test scripts/tests/staff-voice-assets.test.mjs",
+    "assets:prepare-staff-voice": "node scripts/prepare-staff-voice-assets.mjs",
     "test:assets:ranks": "node --test scripts/tests/rank-menu-assets.test.mjs",
     "assets:prepare-ranks": "node scripts/prepare-rank-menu-assets.mjs"
   },
