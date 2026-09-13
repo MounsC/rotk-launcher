@@ -67,7 +67,7 @@ Set `ROTK_STAFF_VOICE_RELEASE_PROOF` to that output directory and rerun the test
 to exercise the actual archives through production AssetSyncService in a
 temporary client. It verifies installation, repeat sync without downloading,
 same-size corruption repair from cache and restoration of synthetic originals.
-Allow roughly 5 GB of additional temporary space with the candidate/archives
+Allow roughly 8 GB of additional temporary space with the candidate/archives
 already prepared. Tests without the variable use tiny synthetic packs.
 
 ## Maintainer rollout
