@@ -8,11 +8,15 @@ import { fileURLToPath } from "node:url";
 import yazl from "yazl";
 import yauzl from "yauzl";
 
-import { CANDIDATE as SOURCE_CANDIDATE } from "./prepare-rank-menu-assets.mjs";
-export { SOURCE_CANDIDATE };
-export const CANDIDATE = Object.freeze({
+// Published assets-v1.8.0. Refuse to overwrite a newer UI without reconciliation.
+export const SOURCE_CANDIDATE = Object.freeze({
   "assets_x64_0.pack2": { size: 2480066691, sha256: "c0feec30e04426b495bb49e38c5065811b15eaa6db8c864ebf2d8dbf1ae1a22d" },
   "ui_x64_0.pack2": { size: 49062635, sha256: "b7cba9246208a183b0654434a879841bd868ff3a448a16a5d1c84bee791dbbdc" },
+  "ui_x64_2.pack2": { size: 48664842, sha256: "98890f61762f39d6e860eb5928498573ac22cf1c36eb6c99fe5fe9f6e35518b3" },
+});
+export const CANDIDATE = Object.freeze({
+  "assets_x64_0.pack2": { size: 2480549101, sha256: "29437a42080140f0743cff4d1634e6e13267fac11c90fb5a0c225807d0d4d0b8" },
+  "ui_x64_0.pack2": { size: 49545045, sha256: "c211c4b2770f75eebff6d1ab4bdeca716b9464e47b899b57f605237a402d0869" },
   "ui_x64_2.pack2": { size: 48664842, sha256: "98890f61762f39d6e860eb5928498573ac22cf1c36eb6c99fe5fe9f6e35518b3" },
 });
 const groups = {
