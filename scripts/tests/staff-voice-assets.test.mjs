@@ -17,17 +17,17 @@ const small = info(Buffer.from("synthetic placeholder"));
 const archives = { assets_x64_0: small, rank_menu_ui: small };
 const packs = Object.fromEntries(names.map(name => [name, small]));
 function baseline() {
-  const assets = ["assets_x64_0", "rank_menu_ui", "unchanged"].map(name => ({ name, version: "1.7.0", type: "zip",
-    installPath: "Resources/Assets", url: `https://github.com/h1z1rotk/assets/releases/download/assets-v1.7.0/${name}.payload`, ...small }));
+  const assets = ["assets_x64_0", "rank_menu_ui", "unchanged"].map(name => ({ name, version: "1.8.1", type: "zip",
+    installPath: "Resources/Assets", url: `https://github.com/h1z1rotk/assets/releases/download/assets-v1.8.1/${name}.payload`, ...small }));
   return {
-    feed: { manifestVersion: 1, packVersion: "1.7.0", assets },
-    payloads: { schemaVersion: 1, kind: "asset-payloads", packVersion: "1.7.0", files: [
+    feed: { manifestVersion: 1, packVersion: "1.8.1", assets },
+    payloads: { schemaVersion: 1, kind: "asset-payloads", packVersion: "1.8.1", files: [
       ...names.map(name => ({ asset: name === "assets_x64_0.pack2" ? "assets_x64_0" : "rank_menu_ui", path: `Resources/Assets/${name}`, ...SOURCE_CANDIDATE[name] })),
       { asset: "unchanged", path: "Resources/Assets/unchanged.pack2", ...small },
     ] },
   };
 }
-const update = (base = baseline(), version = "1.8.0", a = archives, p = packs) => updateManifests(base.feed, base.payloads, version, a, p);
+const update = (base = baseline(), version = "1.9.0", a = archives, p = packs) => updateManifests(base.feed, base.payloads, version, a, p);
 function temporary(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rotk-staff-voice-release-"));
   t.after(() => {
@@ -45,11 +45,11 @@ test("updates the two existing archives without losing settings, Top Ten or unre
   assert.deepEqual(next.payloads.files[0], base.payloads.files[3]);
   assert.deepEqual(CANDIDATE["ui_x64_2.pack2"], SOURCE_CANDIDATE["ui_x64_2.pack2"]);
   assert.equal(next.payloads.files.filter(row => row.asset === "rank_menu_ui").length, 2);
-  assert(next.feed.assets.slice(0,2).every(row => row.url.endsWith(".payload") && row.version === "1.8.0"));
+  assert(next.feed.assets.slice(0,2).every(row => row.url.endsWith(".payload") && row.version === "1.9.0"));
 });
 
 test("rejects stale sources, ownership conflicts, unsafe paths and non-increasing versions", () => {
-  for (const version of ["1.7.0", "1.6.0", "01.8.0", "1.8.0-beta"]) assert.throws(() => update(baseline(), version));
+  for (const version of ["1.8.1", "1.6.0", "01.9.0", "1.9.0-beta"]) assert.throws(() => update(baseline(), version));
   for (let i=0; i<3; i++) {
     const base = baseline(); base.payloads.files[i].sha256 = "0".repeat(64);
     assert.throws(() => update(base), /source pack changed/);
@@ -64,7 +64,7 @@ test("rejects stale sources, ownership conflicts, unsafe paths and non-increasin
   assert.throws(() => update(missing), /unknown payload owner/);
   const mismatch = baseline(); mismatch.payloads.packVersion = "1.6.0";
   assert.throws(() => update(mismatch), /disagree/);
-  assert.throws(() => update(baseline(), "1.8.0", {...archives, rank_menu_ui: {...small,size:2*1024**3}}), /size/);
+  assert.throws(() => update(baseline(), "1.9.0", {...archives, rank_menu_ui: {...small,size:2*1024**3}}), /size/);
 });
 
 test("production preparation rejects unreviewed packs before creating output or changing inputs", async t => {
@@ -113,7 +113,7 @@ test("real launcher installs all three packs, skips repeat sync, repairs corrupt
     await writeArchive(dir, names.slice(1), path.join(dir, "rank_menu_ui.payload"));
     const a = {};
     for (const asset of Object.keys(archives)) a[asset] = await metadata(path.join(dir, `${asset}.payload`));
-    candidate = update(baseline(), "1.8.0", a, p);
+    candidate = update(baseline(), "1.9.0", a, p);
   }
   const changed = candidate.feed.assets.filter(a => Object.hasOwn(archives, a.name));
   const release = { tag_name: `assets-v${candidate.feed.packVersion}`, draft: false, prerelease: false,
