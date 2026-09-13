@@ -17,11 +17,11 @@ const small = info(Buffer.from("synthetic placeholder"));
 const archives = { assets_x64_0: small, rank_menu_ui: small };
 const packs = Object.fromEntries(names.map(name => [name, small]));
 function baseline() {
-  const assets = ["assets_x64_0", "rank_menu_ui", "unchanged"].map(name => ({ name, version: "1.8.0", type: "zip",
-    installPath: "Resources/Assets", url: `https://github.com/h1z1rotk/assets/releases/download/assets-v1.8.0/${name}.payload`, ...small }));
+  const assets = ["assets_x64_0", "rank_menu_ui", "unchanged"].map(name => ({ name, version: "1.8.1", type: "zip",
+    installPath: "Resources/Assets", url: `https://github.com/h1z1rotk/assets/releases/download/assets-v1.8.1/${name}.payload`, ...small }));
   return {
-    feed: { manifestVersion: 1, packVersion: "1.8.0", assets },
-    payloads: { schemaVersion: 1, kind: "asset-payloads", packVersion: "1.8.0", files: [
+    feed: { manifestVersion: 1, packVersion: "1.8.1", assets },
+    payloads: { schemaVersion: 1, kind: "asset-payloads", packVersion: "1.8.1", files: [
       ...names.map(name => ({ asset: name === "assets_x64_0.pack2" ? "assets_x64_0" : "rank_menu_ui", path: `Resources/Assets/${name}`, ...SOURCE_CANDIDATE[name] })),
       { asset: "unchanged", path: "Resources/Assets/unchanged.pack2", ...small },
     ] },
@@ -49,7 +49,7 @@ test("updates the two existing archives without losing settings, Top Ten or unre
 });
 
 test("rejects stale sources, ownership conflicts, unsafe paths and non-increasing versions", () => {
-  for (const version of ["1.8.0", "1.6.0", "01.9.0", "1.9.0-beta"]) assert.throws(() => update(baseline(), version));
+  for (const version of ["1.8.1", "1.6.0", "01.9.0", "1.9.0-beta"]) assert.throws(() => update(baseline(), version));
   for (let i=0; i<3; i++) {
     const base = baseline(); base.payloads.files[i].sha256 = "0".repeat(64);
     assert.throws(() => update(base), /source pack changed/);

@@ -2,7 +2,7 @@
 
 The moderator extension adds the same ROTK crowned skull as the administrator,
 with a bright green (`#28ff18`) fading strip, ivory outline and dark shadow.
-This recipe packages that extension against the published assets-v1.8.0 catalog.
+This recipe packages that extension against the published assets-v1.8.1 catalog.
 It preserves the administrator badge, rank menu, settings panels, staff UI gate
 and every unrelated catalog entry.
 
@@ -15,7 +15,7 @@ stored in the repository.
 
 Use Java 17, FFDec 26.2.1, Python 3 and Node 24.12.0 for the validated pack
 transforms. Work in a separate staging directory, never on installed/hardlinked
-packs. `SOURCE_CANDIDATE` identifies the three assets-v1.8.0 input packs by
+packs. `SOURCE_CANDIDATE` identifies the three assets-v1.8.1 input packs by
 size and SHA-256. Inputs must match before transforming them.
 
 1. Extract `UIRoot.gfx` and `HudGroupVoiceWindow.gfx` from the published main
@@ -81,7 +81,7 @@ already prepared. Tests without the variable use tiny synthetic packs.
 
 The server uses the authenticated role independently of moderator duty: admins
 receive voice tier 9/0, moderators 10/0. The tenth frame requires these new client
-assets; assets-v1.8.0 clients hide it. Seasonal rank, killfeed and permissions are
+assets; assets-v1.8.1 clients hide it. Seasonal rank, killfeed and permissions are
 unchanged. Disable the staff setting and restart the affected roles to restore
 seasonal voice badges, or roll back the two coordinated asset archives and
 manifests together. Do not revert only one UI pack.
