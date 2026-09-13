@@ -10,6 +10,7 @@ $definition = Join-Path $PSScriptRoot "vivoxsdk_x64_v5_compat.def"
 $protocol = Join-Path $PSScriptRoot "voice_hud_protocol.h"
 $crouchPatch = Join-Path $PSScriptRoot "crouch_parity_patch.h"
 $crouchStateCache = Join-Path $PSScriptRoot "crouch_state_cache.h"
+$voiceRankPatch = Join-Path $PSScriptRoot "voice_rank_patch.h"
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $output = Join-Path $PSScriptRoot "dist\vivoxsdk_x64_v5_compat.dll"
 } else {
@@ -18,7 +19,7 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $outputDirectory = Split-Path -Parent $output
 $importLibrary = Join-Path $outputDirectory "vivoxsdk_x64_proxy.lib"
 
-foreach ($required in @($source, $definition, $protocol, $crouchPatch, $crouchStateCache)) {
+foreach ($required in @($source, $definition, $protocol, $crouchPatch, $crouchStateCache, $voiceRankPatch)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing source file: $required"
     }

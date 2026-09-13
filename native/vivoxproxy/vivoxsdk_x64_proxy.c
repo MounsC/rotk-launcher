@@ -455,6 +455,7 @@ static void proxy_trace_once(LONG flag, const char *event) {
 }
 
 #include "crouch_parity_patch.h"
+#include "voice_rank_patch.h"
 
 static uint16_t load_le16(const uint8_t *value) {
     return (uint16_t)((uint16_t)value[0] |
@@ -2462,6 +2463,7 @@ static hud_synthetic_event *hud_pop_event_locked(void) {
 }
 
 int __cdecl vx_get_message(void **message) {
+    voice_rank_ensure_initialized();
     hud_synthetic_event *synthetic;
     int result;
 
