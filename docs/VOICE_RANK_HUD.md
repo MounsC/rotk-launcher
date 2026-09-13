@@ -11,8 +11,9 @@ only two branch opcodes. Page permissions are restored and the instruction
 cache is flushed. The runtime log records installation or unsupported code;
 unknown signatures leave the client untouched and voice audio continues.
 The executable on disk, actor state, killfeed, crouch and microphone logic are
-unchanged. The server companion loads a separate display badge for every
-gameplay mode, including lobby, Practice and Hosted.
+unchanged. The server companion loads the display badge only in public Solo
+and its waiting lobby. Practice, Hosted and caster modes remain unranked;
+the HUD honors the server's zero rank and displays no badge there.
 
 ## Verification
 
@@ -39,5 +40,6 @@ The rebuilt DLL is staged in `resources/patches/vivoxsdk_x64.dll`, with the
 matching hash in `electron/services/vivox-client.ts` and the checksum file.
 It is not deployed to an installed game. Publish together with the server
 change, refresh the allowed proxy hash in the release attestation, then check
-two live speakers in lobby, Practice and Solo. No microphone audio or rendered
+two live speakers in the Solo lobby and match, plus the absence of badges in
+Practice and Hosted. No microphone audio or rendered
 Scaleform frames are exercised by the native harness.
