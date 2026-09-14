@@ -10,6 +10,12 @@
 #include <wchar.h>
 
 #include "voice_hud_protocol.h"
+#if defined(ROTK_VIVOX_V5_COMPAT)
+#include "voice_volume_compat.h"
+static SRWLOCK g_volume_lock = SRWLOCK_INIT;
+static rotk_volume_table g_volume_pending;
+static rotk_volume_destroy_fn g_volume_destroy;
+#endif
 
 #if defined(ROTK_VIVOX_IAT_HOOK)
 #define ORIGINAL_DLL_NAME L"vivoxsdk_x64.dll"
@@ -2497,6 +2503,14 @@ int __cdecl vx_get_message(void **message) {
             return result;
         }
         trace_vivox_message(*message);
+#if defined(ROTK_VIVOX_V5_COMPAT)
+        if (request_is_accessible(*message, ROTK_VOLUME_RESPONSE_BYTES, TRUE)) {
+            AcquireSRWLockExclusive(&g_volume_lock);
+            if (g_volume_destroy != NULL)
+                rotk_volume_restore_response(&g_volume_pending, *message, g_volume_destroy);
+            ReleaseSRWLockExclusive(&g_volume_lock);
+        }
+#endif
         if (compat_suppress_real_sessiongroup_added(*message)) {
             (void)g_destroy_evt(*message);
             *message = NULL;
@@ -2604,6 +2618,26 @@ int __cdecl vx_issue_request3(void *request, int *request_count) {
     memcpy(&request_type,
            (uint8_t *)request + REQUEST_TYPE_OFFSET,
            sizeof(request_type));
+#if defined(ROTK_VIVOX_V5_COMPAT)
+    if (rotk_volume_is_legacy(request_type) &&
+        request_is_accessible(request, ROTK_VOLUME_REQUEST_BYTES, TRUE)) {
+        rotk_volume_create_fn create = (rotk_volume_create_fn)(uintptr_t)GetProcAddress(
+            g_original_module, request_type == ROTK_VOLUME_SPEAKER_LEGACY
+                ? "vx_req_aux_set_speaker_level_create" : "vx_req_aux_set_mic_level_create");
+        void *replacement = NULL;
+        AcquireSRWLockExclusive(&g_volume_lock);
+        g_volume_destroy = (rotk_volume_destroy_fn)(uintptr_t)GetProcAddress(g_original_module, "destroy_req");
+        if (create != NULL && g_volume_destroy != NULL)
+            replacement = rotk_volume_prepare(&g_volume_pending, request, create, g_volume_destroy, g_strdup);
+        if (replacement != NULL) {
+            result = g_issue_request(replacement, request_count);
+            if (result != 0) rotk_volume_cancel(&g_volume_pending, replacement, g_volume_destroy);
+            ReleaseSRWLockExclusive(&g_volume_lock);
+            return result;
+        }
+        ReleaseSRWLockExclusive(&g_volume_lock);
+    }
+#endif
     if (request_type ==
         REQUEST_SESSION_SEND_NOTIFICATION) {
         return g_issue_request(request, request_count);
@@ -2698,6 +2732,21 @@ int __cdecl vx_issue_request3(void *request, int *request_count) {
 
 #if defined(ROTK_VIVOX_IAT_HOOK)
 #include "vivox_iat_hook.h"
+#endif
+
+#if defined(ROTK_VIVOX_V5_COMPAT)
+int __cdecl vx_uninitialize(void) {
+    typedef int (__cdecl *uninitialize_fn)(void);
+    uninitialize_fn uninitialize;
+    if (!InitOnceExecuteOnce(&g_original_once, initialize_original, NULL, NULL) ||
+        g_original_module == NULL || g_free == NULL) return VOICE_ERROR;
+    uninitialize = (uninitialize_fn)(uintptr_t)GetProcAddress(g_original_module, "vx_uninitialize");
+    if (uninitialize == NULL) return VOICE_ERROR;
+    AcquireSRWLockExclusive(&g_volume_lock);
+    if (g_volume_destroy != NULL) rotk_volume_clear(&g_volume_pending, g_volume_destroy);
+    ReleaseSRWLockExclusive(&g_volume_lock);
+    return uninitialize();
+}
 #endif
 
 BOOL WINAPI DllMain(HINSTANCE instance,
