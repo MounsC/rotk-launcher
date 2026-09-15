@@ -870,7 +870,7 @@ static BOOL parse_grant(const uint8_t *wire,
     return TRUE;
 }
 
-static BOOL fetch_grant(voice_action action, voice_grant *grant) {
+static BOOL fetch_grant(voice_action action, const WCHAR *channel, voice_grant *grant) {
     static const WCHAR user_agent[] = L"ROTK-VivoxProxy/1";
     static const WCHAR login_path[] = L"/voice/v1/login";
     static const WCHAR join_path[] = L"/voice/v1/join";
@@ -879,7 +879,7 @@ static BOOL fetch_grant(voice_action action, voice_grant *grant) {
     HINTERNET session = NULL;
     HINTERNET connection = NULL;
     HINTERNET request = NULL;
-    WCHAR authorization[600];
+    WCHAR authorization[800];
     WCHAR content_type[64];
     uint8_t wire[GRANT_WIRE_MAX + 1U];
     DWORD status = 0U;
@@ -904,8 +904,12 @@ static BOOL fetch_grant(voice_action action, voice_grant *grant) {
         sizeof(authorization) / sizeof(authorization[0]),
         L"Authorization: Bearer %ls\r\n"
         L"Accept: application/octet-stream\r\n"
-        L"X-ROTK-Vivox-Grant-Version: 2\r\n",
-        g_config.session_id);
+        L"X-ROTK-Vivox-Grant-Version: 2\r\n"
+        L"%ls%ls%ls",
+        g_config.session_id,
+        action == VOICE_ACTION_JOIN ? L"X-ROTK-Vivox-Channel: " : L"",
+        action == VOICE_ACTION_JOIN ? channel : L"",
+        action == VOICE_ACTION_JOIN ? L"\r\n" : L"");
     if (written <= 0 ||
         written >=
             (int)(sizeof(authorization) /
@@ -1519,6 +1523,30 @@ static BOOL mutate_sessiongroup_context(
     memcpy(g_channel_uri,
            grant->channel,
            strlen(grant->channel) + 1U);
+    return TRUE;
+}
+
+/* Snapshot the exact native room without accepting HTTP header injection. */
+static BOOL copy_requested_channel(void *request, uint32_t request_type,
+                                   WCHAR channel[64]) {
+    char *uri = NULL;
+    size_t uri_bytes = 0U;
+    size_t request_bytes = request_type == REQUEST_SESSION
+        ? SESSION_REQUEST_BYTES : SESSIONGROUP_REQUEST_BYTES;
+    size_t uri_offset = request_type == REQUEST_SESSION
+        ? SESSION_URI_OFFSET : SESSIONGROUP_URI_OFFSET;
+    channel[0] = L'\0';
+    if (request_type == REQUEST_LOGIN) return TRUE;
+    if ((request_type != REQUEST_SESSION && request_type != REQUEST_SESSIONGROUP_ADD) ||
+        !request_is_accessible(request, request_bytes, FALSE)) return FALSE;
+    read_pointer(request, uri_offset, &uri);
+    if (!bounded_string(uri, 63U, &uri_bytes) || uri_bytes < 13U ||
+        !bytes_are_visible_ascii((const uint8_t *)uri, uri_bytes) ||
+        memcmp(uri, "sip:confctl-", 12U) != 0) return FALSE;
+    for (size_t index = 0U; index < uri_bytes; ++index) {
+        channel[index] = (WCHAR)(unsigned char)uri[index];
+    }
+    channel[uri_bytes] = L'\0';
     return TRUE;
 }
 
@@ -2676,7 +2704,9 @@ int __cdecl vx_issue_request3(void *request, int *request_count) {
         return issue_original_with_trace(
             request, request_count, TRUE);
     }
-    if (!fetch_grant(action, &grant)) {
+    WCHAR requested_channel[64];
+    if (!copy_requested_channel(request, request_type, requested_channel) ||
+        !fetch_grant(action, requested_channel, &grant)) {
         SecureZeroMemory(&grant, sizeof(grant));
         ReleaseSRWLockExclusive(&g_voice_lock);
         proxy_trace_once(
