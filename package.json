@@ -31,7 +31,7 @@
     "test:native:voice-rank": "powershell -NoProfile -ExecutionPolicy Bypass -File native/vivoxproxy/test-voice-rank.ps1",
     "test:native:voice-volume": "powershell -NoProfile -ExecutionPolicy Bypass -File native/vivoxproxy/test-voice-volume.ps1",
     "test:native:crouch": "powershell -NoProfile -ExecutionPolicy Bypass -File native/vivoxproxy/test-crouch-state-cache.ps1",
-    "build:vivox": "npm run test:native:crouch && npm run test:native:voice-rank && powershell -NoProfile -ExecutionPolicy Bypass -File native/vivoxproxy/build-v5-compat.ps1 -OutputPath resources/patches/vivoxsdk_x64.dll && npm run test:native:voice-volume",
+    "build:vivox": "npm run test:native:duo-voice && npm run test:native:crouch && npm run test:native:voice-rank && powershell -NoProfile -ExecutionPolicy Bypass -File native/vivoxproxy/build-v5-compat.ps1 -OutputPath resources/patches/vivoxsdk_x64.dll && npm run test:native:voice-volume",
     "prepare:vivox": "npm run build:vivox && npm run verify:vivox-runtime",
     "verify:vivox-runtime": "node scripts/verify-vivox-runtime.mjs",
     "build:diagnostics": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-diagnostics.ps1",
@@ -41,7 +41,8 @@
     "test:assets:staff-voice": "node --test scripts/tests/staff-voice-assets.test.mjs",
     "assets:prepare-staff-voice": "node scripts/prepare-staff-voice-assets.mjs",
     "test:assets:ranks": "node --test scripts/tests/rank-menu-assets.test.mjs",
-    "assets:prepare-ranks": "node scripts/prepare-rank-menu-assets.mjs"
+    "assets:prepare-ranks": "node scripts/prepare-rank-menu-assets.mjs",
+    "test:native:duo-voice": "powershell -NoProfile -ExecutionPolicy Bypass -File native/vivoxproxy/test-duo-group-voice.ps1"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.2.8",
