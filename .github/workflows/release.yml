@@ -108,7 +108,7 @@ jobs:
           }
           npm run build:vivox
           $proxyHash = (Get-FileHash -LiteralPath "resources\patches\vivoxsdk_x64.dll" -Algorithm SHA256).Hash
-          if ($proxyHash -ne "4A5485E7CC065E1186232E52338D9B6374678CAB32B0F56136C78F6E43FE8D3E") {
+          if ($proxyHash -ne "EEFF8991EA13AA7BB9709B5EBFCB12A00EC805BA41B1C99FED5419E07E5BB028") {
             throw "Unexpected Vivox proxy SHA-256: $proxyHash"
           }
           # Les sidecars alimentent les overrides d'attestation embarqués :
@@ -156,7 +156,7 @@ jobs:
             Where-Object { $_.Name -eq "vivoxsdk_x64.dll" } |
             Select-Object -First 1
           $proxyHash = (Get-FileHash -LiteralPath $vivoxProxy.FullName -Algorithm SHA256).Hash
-          if ($proxyHash -ne "4A5485E7CC065E1186232E52338D9B6374678CAB32B0F56136C78F6E43FE8D3E") {
+          if ($proxyHash -ne "EEFF8991EA13AA7BB9709B5EBFCB12A00EC805BA41B1C99FED5419E07E5BB028") {
             throw "Unexpected packaged Vivox proxy SHA-256: $proxyHash"
           }
 
