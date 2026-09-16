@@ -12,6 +12,8 @@ const fixture = Buffer.from([
   '    <Option id="a.master_volume" getter="GetMasterVolume" setter="SetMasterVolume"/>',
   '    <Option id="a.header.audiovoice" type="header"/>',
   '    <Option id="vchat.enable" type="checkbox"/>',
+  '    <Option id="vchat.output_devices" type="combobox"/>',
+  '    <Option id="vchat.ducking" type="percent-slider" getter="GetDuckingPercent" setter="SetDuckingPercent" values="range=0|1~snap=0.01"/>',
   '    <!--Disabled',
   '        <Option id="vchat.receive_volume" getter="GetReceiveVolume" setter="SetReceiveVolume"/>',
   '        <Option id="unrelated.hidden"/>',
@@ -19,11 +21,16 @@ const fixture = Buffer.from([
   '</Section></OptionElements>', '',
 ].join('\r\n'));
 
-test('receive slider is active, ahead of voice toggle, and uses the native receive callbacks', () => {
+test('receive volume adds a separate slider before the voice toggle and preserves ducking', () => {
   const text = enableVoiceSlider(fixture).toString();
   const active = text.replace(/<!--[\s\S]*?-->/g, '');
+  const before = fixture.toString().replace(/<!--[\s\S]*?-->/g, '');
   assert.equal((active.match(/id="vchat.receive_volume"/g) ?? []).length, 1);
   assert(active.indexOf('vchat.receive_volume') < active.indexOf('vchat.enable'));
+  const ducking = xml => xml.match(/<Option id="vchat.ducking"[^>]*>/)[0];
+  assert.equal(ducking(active), ducking(before));
+  const ids = xml => [...xml.matchAll(/<Option id="([^"]+)"/g)].map(row => row[1]);
+  assert.deepEqual(ids(active).filter(id => id !== 'vchat.receive_volume'), ids(before));
   const row = active.match(/<Option id="vchat.receive_volume"[^>]*>/)[0];
   assert.match(row, /getter="GetVoiceReceiveVolume" setter="SetVoiceReceiveVolume"/);
   assert.match(row, /values="range=0\|100~snap=1"/);
@@ -120,11 +127,19 @@ test('release refuses rollback, missing translations, and duplicate ownership', 
   assert.throws(() => updateVoiceManifests(f.feed, f.payloads, '1.10.6', f.archives, f.files), /duplicate payload/);
 });
 
-test('installed BR1315: rebuilt table is readable and all 502 unrelated entries are preserved', {skip: !process.env.ROTK_VOICE_TEST_CLIENT}, () => {
+test('installed BR1315: rebuilt table is readable and all unrelated entries are preserved', {skip: !process.env.ROTK_VOICE_TEST_CLIENT}, () => {
   const input = fs.readFileSync(path.join(process.env.ROTK_VOICE_TEST_CLIENT, 'Resources/Assets/data_x64_0.pack2'));
   const out = buildPatchedPack(input);
-  assert.equal(out.unchangedEntries, 502);
+  assert.equal(out.unchangedEntries, catalog(input).entries.size - 2);
   const {entries} = catalog(out.bytes);
-  assert.match(readSettings(out.bytes, entries.get(SETTINGS_HASH)).toString(), /GetVoiceReceiveVolume/);
+  const original = readSettings(input, catalog(input).entries.get(SETTINGS_HASH)).toString().replace(/<!--[\s\S]*?-->/g, '');
+  const active = readSettings(out.bytes, entries.get(SETTINGS_HASH)).toString().replace(/<!--[\s\S]*?-->/g, '');
+  assert.match(active, /GetVoiceReceiveVolume/);
+  assert.match(active, /id="vchat.ducking"/);
+  const rows = xml => xml.split(/\r?\n/).filter(line => /<Option id=/.test(line));
+  const before = rows(original), after = rows(active);
+  assert.equal(after.length, before.length + 1);
+  assert.equal(after.findIndex(line => line.includes('vchat.receive_volume')) + 1, after.findIndex(line => line.includes('vchat.enable')));
+  assert.deepEqual(after.filter(line => !line.includes('vchat.receive_volume')), before);
   assert.match(readSettings(out.bytes, entries.get(CODE_STRINGS_HASH)).toString(), /VoiceReceiveVolume\^9105201\^/);
 });
