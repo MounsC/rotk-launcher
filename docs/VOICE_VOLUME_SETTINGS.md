@@ -10,6 +10,9 @@ and from the in-match Escape settings menu. Its native callbacks are
 `GetVoiceReceiveVolume` / `SetVoiceReceiveVolume`, with a 0–100 range, and the
 client saves the value in `[Voice] ReceiveVolume`. Zero mutes received voices.
 The player's microphone and the game's master/effects volumes are independent.
+The existing **Ducking** slider, its callbacks and its stored value remain
+unchanged. Ducking controls attenuation of game sounds during voice chat;
+the separate voice-volume slider controls the received voices.
 
 ## Rebuild and validation
 
@@ -23,7 +26,7 @@ test against an installed BR1315 data pack. Never commit that installation.
 
 The recipe verifies source sizes and hashes against the supplied current
 manifest. It then changes only the options XML and code-string mapping table in
-`data_x64_0.pack2`; the 502 other entries are preserved. The XML source is pinned
+`data_x64_0.pack2`; every other entry is preserved. The XML source is pinned
 by SHA-256. Unknown options revisions and reused string IDs fail closed.
 
 Code-string names `UI.ROTK.VoiceReceiveVolume` and
@@ -44,8 +47,11 @@ Publish both payloads together through the assets repository and coordinate the
 matching installed-file attestation policy. `.payload` filenames intentionally
 avoid the launcher's automatic latest-release ZIP discovery before the complete
 feed is ready. Do not expose a feed whose release attachments are unavailable.
-Players receive the updated control on their next launcher/game restart; further
-volume adjustments take effect in the running game.
+The launcher must also ship the Vivox compatibility fix from launcher PR #47.
+That fix is merged into source but is absent from the published v2.0.10 release;
+publishing these assets alone is insufficient for reliable volume control.
+Players receive the updated control on their next launcher/game restart with
+that fix installed; further volume adjustments take effect in the running game.
 
 ## Local verification, 2026-09-15
 
