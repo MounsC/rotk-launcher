@@ -144,5 +144,5 @@ describe("collectTpmAnchor (real TPM, win32 only)", () => {
     expect(tpmPublic.subarray(tpmPublic.length - 66, tpmPublic.length - 34).equals(x)).toBe(true);
     // The EK public part is readable without elevation; the certificate may not be.
     expect(material.ek === null || Buffer.from(material.ek.publicKey, "base64").readUInt32LE(0) === 0x31415352).toBe(true);
-  });
+  }, 30_000); // a runner without a TPM spends seconds in Add-Type and the PCP before answering
 });

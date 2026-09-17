@@ -56,7 +56,7 @@ describe("collectTpmProof (real TPM, win32 only)", () => {
     if (proof === null) return; // no usable TPM here
     expect(verifyTpmProof(proof.publicKey, proof.signature, message)).toBe(true);
     expect(verifyTpmProof(proof.publicKey, proof.signature, "rotk-tpm-bind-v1")).toBe(false);
-  });
+  }, 30_000);
 
   it("returns null off Windows", async () => {
     if (process.platform === "win32") return;
