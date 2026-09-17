@@ -85,6 +85,11 @@ export interface AttestationResult {
    * the server needs to bind it; absent when the machine has no usable TPM.
    */
   tpmProof?: { publicKey: string; signature: string; algo: string };
+  /**
+   * Optional level-2 anchor (see tpm-anchor.ts): the TPM identity key's proof
+   * over the same message, with the TPM2B_PUBLIC that names it.
+   */
+  tpmAnchor?: { publicKey: string; signature: string; algo: string; tpmPublic: string };
 }
 
 interface CacheEntry {
@@ -458,6 +463,7 @@ export function buildAttestationResult(
   measurement: Measurement,
   launcherVersion: string,
   tpmProof?: { publicKey: string; signature: string; algo: string } | null,
+  tpmAnchor?: { publicKey: string; signature: string; algo: string; tpmPublic: string } | null,
 ): AttestationResult {
   return {
     challengeId: challenge.challengeId,
@@ -472,6 +478,7 @@ export function buildAttestationResult(
     },
     deviations: measurement.deviations,
     ...(tpmProof ? { tpmProof } : {}),
+    ...(tpmAnchor ? { tpmAnchor } : {}),
   };
 }
 

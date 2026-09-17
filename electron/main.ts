@@ -57,6 +57,7 @@ import {
 } from "./services/game-launcher.js";
 import { HWID_CORE_SLOTS, collectHwid } from "./services/machine-identity.js";
 import { collectTpmProof } from "./services/tpm-identity.js";
+import { collectTpmAnchor, enrolTpmAnchor } from "./services/tpm-anchor.js";
 import { tpmBindingMessage } from "../shared/attestation.js";
 import { classifyClientSource, validateInstallDestination } from "./services/path-policy.js";
 import { locateSteamClient } from "./services/steam-locator.js";
@@ -404,11 +405,27 @@ async function attestInstallation(
     // carry it (#320 §C): neither can be swapped under the other, and the
     // single-use challenge stops replay. The server decides (behind its own
     // flag) whether a missing proof is acceptable.
-    const tpmProof = await collectTpmProof(tpmBindingMessage(challenge.challengeId, hwid))
-      .catch(() => null);
+    const bindingMessage = tpmBindingMessage(challenge.challengeId, hwid);
+    const tpmProof = await collectTpmProof(bindingMessage).catch(() => null);
+    // Level-2 anchor (#320 §A): the TPM identity key signs the same message,
+    // and the server is told which endorsement key it lives under — a
+    // credential activation the first time, one confirming request after.
+    // Observe only: a machine without it launches exactly as before.
+    const anchor = await collectTpmAnchor(bindingMessage).catch(() => null);
+    if (anchor !== null) {
+      const enrolment = await enrolTpmAnchor(
+        { beginUrl: runtime.tpmEnrolBeginUrl, completeUrl: runtime.tpmEnrolCompleteUrl },
+        playerKey,
+        launcherVersion,
+        anchor,
+      ).catch(() => null);
+      if (enrolment !== null && enrolment.state !== "activated") {
+        console.warn("TPM anchor not activated", enrolment);
+      }
+    }
     return {
       status: "attested",
-      block: buildAttestationResult(challenge, measurement, launcherVersion, tpmProof),
+      block: buildAttestationResult(challenge, measurement, launcherVersion, tpmProof, anchor?.proof ?? null),
       hwid,
     };
   } catch (error) {

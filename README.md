@@ -96,6 +96,26 @@ de sa taille et de son SHA-256. Un fichier inconnu, un lien ou un répertoire
 portant ce nom n’est jamais supprimé automatiquement et bloque le lancement
 avec une erreur explicite.
 
+## Droits administrateur et ancre TPM (2.0.12)
+
+Depuis 2.0.12 le launcher demande les droits administrateur au démarrage
+(`requestedExecutionLevel: requireAdministrator`) et l'installeur s'installe
+pour la machine (`perMachine`). La raison est l'**ancre TPM** (issue
+MzKaxD/returnoftheking#320 §A) : en plus de la clé TPM de niveau 1, le launcher
+crée une clé d'identité dans le TPM (`rotk-tpm-aik-v1`, Platform Crypto
+Provider) et la lie à la clé d'endossement (EK) du TPM par activation de
+crédential — le serveur chiffre un secret vers l'EK, seul ce TPM le retrouve
+(`electron/services/tpm-anchor.ts`). Windows refuse cette commande
+(`TPM2_ActivateCredential`) et la lecture du certificat EK à un utilisateur
+standard ; élevé, le launcher les obtient, et le serveur peut un jour distinguer
+un vrai TPM d'une clé logicielle.
+
+Tout est en observation : sans TPM, sans élévation ou sans certificat, le
+lancement se déroule exactement comme avant et le serveur ne fait que
+journaliser. Le launcher n'envoie de la clé d'endossement que sa partie
+publique et ses certificats ; le serveur n'en garde qu'un hash à clé et
+l'émetteur de la chaîne.
+
 ## Authentification du compte joueur
 
 Le launcher ne génère aucune identité joueur. L’utilisateur doit se connecter avec Steam sur [rotk.app](https://rotk.app), ouvrir **Avatar → Account settings → ROTK launcher key**, générer sa clé puis la coller dans le launcher. Sans clé hexadécimale valide de 32 caractères, le bouton de lancement ouvre cette procédure au lieu de démarrer H1Z1.

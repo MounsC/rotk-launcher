@@ -125,6 +125,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
       "signExts": [
         "steam_api64.dll",
         "vivoxsdk_x64.dll",
@@ -147,6 +148,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
