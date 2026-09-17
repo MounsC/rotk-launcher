@@ -17,6 +17,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { windowsSystemToolPath } from "./windows-tools.js";
+
 const execFileAsync = promisify(execFile);
 
 /** The fingerprint slots, matching the server's HWID_COMPONENTS. */
@@ -58,14 +60,20 @@ export function parseCimValue(stdout: string): string | undefined {
   return cleanComponent(stdout.split(/\r?\n/).map((line) => line.trim()).find((line) => line !== ""));
 }
 
+// Absolute paths, never bare names: a `reg.exe` or `powershell.exe` placed
+// earlier on the user's PATH would otherwise answer these queries itself.
 async function reg(path: string, value: string): Promise<string> {
-  const { stdout } = await execFileAsync("reg", ["query", path, "/v", value], { windowsHide: true });
+  const { stdout } = await execFileAsync(
+    windowsSystemToolPath("reg"),
+    ["query", path, "/v", value],
+    { windowsHide: true },
+  );
   return stdout;
 }
 
 async function cim(command: string): Promise<string> {
   const { stdout } = await execFileAsync(
-    "powershell",
+    windowsSystemToolPath("powershell"),
     ["-NoProfile", "-NonInteractive", "-Command", command],
     { windowsHide: true, timeout: 8_000 },
   );
