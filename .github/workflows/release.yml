@@ -60,6 +60,14 @@ jobs:
           # Match CI: compile from a fresh Windows object cache.
           use-cache: false
 
+      - name: Keep the Zig local cache apart from the global one
+        # setup-zig points the local and global Zig caches at the same folder;
+        # zig cc then loses the object it just compiled when it links
+        # (lld-link: could not open .zig-cache\o\…\crouch_state_cache_test.obj).
+        # A later GITHUB_ENV export overrides the action's.
+        shell: pwsh
+        run: '"ZIG_LOCAL_CACHE_DIR=$env:RUNNER_TEMP\zig-local-cache" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8'
+
       - name: Install locked dependencies
         run: npm ci
 

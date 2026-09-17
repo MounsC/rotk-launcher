@@ -42,6 +42,14 @@ jobs:
           # Restored Windows object caches can reference missing .obj files.
           use-cache: false
 
+      - name: Séparer le cache Zig local du cache global
+        # setup-zig points the local and global Zig caches at the same folder;
+        # zig cc then loses the object it just compiled when it links
+        # (lld-link: could not open .zig-cache\o\…\crouch_state_cache_test.obj).
+        # A later GITHUB_ENV export overrides the action's.
+        shell: pwsh
+        run: '"ZIG_LOCAL_CACHE_DIR=$env:RUNNER_TEMP\zig-local-cache" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8'
+
       - name: Refuser les fichiers propriétaires du client
         shell: pwsh
         run: |
