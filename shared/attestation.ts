@@ -124,6 +124,10 @@ export const ATTESTATION_OVERRIDE_PATHS: readonly string[] = [
   // Added by the launcher (no vanilla counterpart): attested via an override
   // entry, which mergeExpectedFiles accepts for new paths too.
   "vivoxsdk_x64_v5.dll",
+  // Shotgun sprint DirectInput proxy (launcher 2.0.14+). Present only while
+  // the server's client-patch mode is "patched"; the marker next to it is an
+  // .ini and stays outside the attestation tree by design.
+  "dinput8.dll",
 ];
 
 /** True when a path must not take part in the attestation root. */
@@ -262,6 +266,13 @@ export function challengeSigningInput(challenge: {
    * the bytes are exactly what they were before the pool existed.
    */
   hwidSlots?: readonly string[];
+  /**
+   * The client-patch mode the server directed for launcher 2.0.14+ (shotgun
+   * sprint proxy installed or removed). Appended after the optional slot list
+   * so launchers that predate the field verify exactly the bytes they always
+   * did; absent on a challenge from a server that does not direct a mode.
+   */
+  clientPatchMode?: AttestationClientPatchMode;
 }): string {
   return [
     CHALLENGE_DOMAIN,
@@ -270,8 +281,15 @@ export function challengeSigningInput(challenge: {
     challenge.policyVersion,
     challenge.expiresAt,
     ...(challenge.hwidSlots === undefined ? [] : [challenge.hwidSlots.join(",")]),
+    ...(challenge.clientPatchMode === undefined ? [] : [challenge.clientPatchMode]),
   ].join("\0");
 }
+
+/**
+ * Server-directed state of the launcher-installed shotgun sprint client patch.
+ * Mirrored by the server's attestation policy and challenge signature.
+ */
+export type AttestationClientPatchMode = "patched" | "clean";
 
 /** A fingerprint slot name as the server spells them: lowercase snake case. */
 export const HWID_SLOT_NAME = /^[a-z0-9_]{1,40}$/;

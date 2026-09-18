@@ -479,3 +479,75 @@ describe("parseBaseManifest", () => {
     })).toThrow(/chemin invalide/);
   });
 });
+
+describe("client patch challenge directive", () => {
+  const baseChallenge = {
+    challengeId: CHALLENGE_ID,
+    nonce: "dGVzdC1ub25jZS0xMjM0NTY3ODkw",
+    policyVersion: "2026.09.18-0002",
+    packVersion: "1.13.5",
+    baseBuildId: "1.0.326.439939",
+    minLauncherVersion: "1.4.5",
+    expiresAt: "2026-09-18T00:15:00.000Z",
+    keyId: "test-key",
+  };
+
+  function responder(challenge: Record<string, unknown>, privateKey: ReturnType<typeof keyPair>["privateKey"]) {
+    const signature = signPayload(
+      null,
+      Buffer.from(challengeSigningInput(challenge as never), "utf8"),
+      privateKey,
+    ).toString("base64url");
+    return (async () => new Response(
+      JSON.stringify({ ok: true, ...challenge, signature }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as unknown as typeof fetch;
+  }
+
+  it("carries the signed patched/clean mode and the optional slot list", async () => {
+    const { privateKey, publicKeyRaw } = keyPair();
+    const challenge = {
+      ...baseChallenge,
+      hwidSlots: ["machine_guid", "volume_serial"],
+      clientPatchMode: "patched",
+    };
+    const parsed = await requestAttestationChallenge(PLAYER_KEY, ENDPOINT, "2.0.14", {
+      fetchImpl: responder(challenge, privateKey),
+      trustedKeys: { "test-key": publicKeyRaw },
+    });
+    expect(parsed.clientPatchMode).toBe("patched");
+    expect(parsed.hwidSlots).toEqual(["machine_guid", "volume_serial"]);
+    expect(challengeSigningInput(parsed)).toBe(
+      "rotk-challenge-v1\0" + CHALLENGE_ID + "\0" + baseChallenge.nonce
+        + "\0" + baseChallenge.policyVersion + "\0" + baseChallenge.expiresAt
+        + "\0machine_guid,volume_serial\0patched",
+    );
+  });
+
+  it("refuses a mode that is not covered by the signature", async () => {
+    const { privateKey, publicKeyRaw } = keyPair();
+    const challenge = { ...baseChallenge, clientPatchMode: "clean" };
+    const signatureOverHistoricBytes = signPayload(
+      null,
+      Buffer.from(challengeSigningInput(baseChallenge), "utf8"),
+      privateKey,
+    ).toString("base64url");
+    const fetchImpl = (async () => new Response(
+      JSON.stringify({ ok: true, ...challenge, signature: signatureOverHistoricBytes }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as unknown as typeof fetch;
+    await expect(requestAttestationChallenge(PLAYER_KEY, ENDPOINT, "2.0.14", {
+      fetchImpl,
+      trustedKeys: { "test-key": publicKeyRaw },
+    })).rejects.toThrow(/not signed by a trusted key/);
+  });
+
+  it("refuses an unknown mode value before verifying anything", async () => {
+    const { privateKey, publicKeyRaw } = keyPair();
+    const challenge = { ...baseChallenge, clientPatchMode: "patched-ish" };
+    await expect(requestAttestationChallenge(PLAYER_KEY, ENDPOINT, "2.0.14", {
+      fetchImpl: responder(challenge, privateKey),
+      trustedKeys: { "test-key": publicKeyRaw },
+    })).rejects.toThrow(/Invalid attestation challenge/);
+  });
+});

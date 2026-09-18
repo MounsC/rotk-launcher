@@ -196,12 +196,14 @@ export { isAttestationExcluded } from "../../shared/attestation.js";
  * Expected hashes for the files the launcher deliberately replaces or adds.
  *
  * Once per-player and launcher-rewritten files are excluded, a ROTK install
- * differs from a vanilla one by exactly three files: `steam_api64.dll` (the
- * open-source shim), `vivoxsdk_x64.dll` (the ROTK voice proxy) and
+ * differs from a vanilla one by up to four files: `steam_api64.dll` (the
+ * open-source shim), `vivoxsdk_x64.dll` (the ROTK voice proxy),
  * `vivoxsdk_x64_v5.dll` (the official Vivox 5 runtime, absent from a vanilla
- * tree — mergeExpectedFiles accepts overrides for new paths too). They stay
- * attested — swapping one for a cheat DLL must be caught — but against the
- * launcher's own artifacts rather than the vanilla hashes.
+ * tree — mergeExpectedFiles accepts overrides for new paths too) and, only
+ * while the server directs the patched client-patch mode, `dinput8.dll` (the
+ * shotgun sprint proxy). They stay attested — swapping one for a cheat DLL
+ * must be caught — but against the launcher's own artifacts rather than the
+ * vanilla hashes.
  *
  * Hashes come from the shipped `resources/patches/*.sha256`, which CI already
  * checks against a rebuild from source, so there is no third place to keep in

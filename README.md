@@ -101,7 +101,7 @@ avec une erreur explicite.
 Depuis 2.0.12 le launcher demande les droits administrateur au démarrage
 (`requestedExecutionLevel: requireAdministrator`) et l'installeur s'installe
 pour la machine (`perMachine`). La raison est l'**ancre TPM** (issue
-MzKaxD/returnoftheking#320 §A) : en plus de la clé TPM de niveau 1, le launcher
+h1z1rotk/returnoftheking#320 §A) : en plus de la clé TPM de niveau 1, le launcher
 crée une clé d'identité dans le TPM (`rotk-tpm-aik-v1`, Platform Crypto
 Provider) et la lie à la clé d'endossement (EK) du TPM par activation de
 crédential — le serveur chiffre un secret vers l'EK, seul ce TPM le retrouve
@@ -132,7 +132,7 @@ La clé est chiffrée par Electron `safeStorage` — Windows DPAPI sur la platef
 Lancer l’application en développement :
 
 ```powershell
-git clone https://github.com/MzKaxD/rotk-launcher.git
+git clone https://github.com/h1z1rotk/rotk-launcher.git
 cd rotk-launcher
 npm ci
 npm run dev

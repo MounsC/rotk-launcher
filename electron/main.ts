@@ -46,6 +46,7 @@ import {
   resolveBundledShimPath,
   resolveBundledVivoxProxyPath,
   resolveBundledVivoxRuntimePath,
+  resolveBundledGameplayPatchPath,
   resolveBundledDiagnosticsPath,
 } from "./constants.js";
 import { ConfigStore } from "./services/config-store.js";
@@ -99,6 +100,14 @@ import { uploadDiagnostic } from "./services/diagnostic-upload.js";
 import { collectDiagnosticClientContext } from "./services/diagnostic-client-context.js";
 import type { DiagnosticSessionContext } from "./services/diagnostic-reports.js";
 import type { DiagnosticCaptureRequest, DiagnosticExportRequest, DiagnosticState } from "../shared/diagnostics.js";
+import {
+  GAMEPLAY_MARKER_SHA256,
+  GAMEPLAY_PATCH_SHA256,
+  applyGameplayPatchMode,
+  readCachedGameplayPatchMode,
+  recordGameplayPatchState,
+  type GameplayPatchMode,
+} from "./services/gameplay-patch.js";
 
 app.setName(APP_NAME);
 if (!app.isPackaged && process.env.ROTK_USER_DATA_DIR) {
@@ -343,18 +352,39 @@ async function attestInstallation(
   runtime: RuntimeConfig,
 ): Promise<AttestationOutcome> {
   const root = await installationRoot();
-  if (!root) return { status: "not-applicable" };
   const userDataDirectory = app.getPath("userData");
   const launcherVersion = app.getVersion();
+  // A server that does not run attestation (no policy yet, development
+  // backend) gets the last mode this player was told to use; a fresh machine
+  // starts on the shipped default. Production always uses the signed
+  // challenge directive below.
+  const fallbackMode: GameplayPatchMode =
+    await readCachedGameplayPatchMode(userDataDirectory) ?? "patched";
+  if (!root) return { status: "not-applicable", clientPatchMode: fallbackMode };
   try {
     const marker = await readInstallationMarker(root);
-    if (!marker) return { status: "not-applicable" };
+    if (!marker) return { status: "not-applicable", clientPatchMode: fallbackMode };
 
     const challenge = await requestAttestationChallenge(
       playerKey,
       runtime.attestationChallengeUrl,
       launcherVersion,
     );
+    // The signed challenge names the client-patch mode this launch must use.
+    // A server that predates the field expects a clean tree, so the safe
+    // default is "clean" rather than silently keeping a local patch.
+    const clientPatchMode: GameplayPatchMode = challenge.clientPatchMode ?? "clean";
+    await applyGameplayPatchMode(
+      root,
+      resolveBundledGameplayPatchPath(),
+      clientPatchMode,
+    );
+    await recordGameplayPatchState(userDataDirectory, {
+      mode: clientPatchMode,
+      dllSha256: clientPatchMode === "patched" ? GAMEPLAY_PATCH_SHA256 : null,
+      markerSha256: clientPatchMode === "patched" ? GAMEPLAY_MARKER_SHA256 : null,
+      policyVersion: challenge.policyVersion,
+    });
     const baseManifest = await loadBaseManifest({
       url: BASE_MANIFEST_URL,
       userDataDirectory,
@@ -375,6 +405,9 @@ async function attestInstallation(
       { installPath: "steam_api64.dll", bundledPath: resolveBundledShimPath() },
       { installPath: "vivoxsdk_x64.dll", bundledPath: resolveBundledVivoxProxyPath() },
       { installPath: "vivoxsdk_x64_v5.dll", bundledPath: resolveBundledVivoxRuntimePath() },
+      ...(clientPatchMode === "patched"
+        ? [{ installPath: "dinput8.dll", bundledPath: resolveBundledGameplayPatchPath() }]
+        : []),
     ]);
 
     const measurement = await measureInstallation({
@@ -427,6 +460,7 @@ async function attestInstallation(
       status: "attested",
       block: buildAttestationResult(challenge, measurement, launcherVersion, tpmProof, anchor?.proof ?? null),
       hwid,
+      clientPatchMode,
     };
   } catch (error) {
     attestationProgress = null;
@@ -438,7 +472,12 @@ async function attestInstallation(
     // No policy published / attestation unconfigured: it does not apply, and
     // the launch proceeds silently exactly as before enforcement existed.
     if (error instanceof AttestationUnavailableError && error.notApplicable) {
-      return { status: "not-applicable" };
+      await applyGameplayPatchMode(
+        root,
+        resolveBundledGameplayPatchPath(),
+        fallbackMode,
+      ).catch(() => undefined);
+      return { status: "not-applicable", clientPatchMode: fallbackMode };
     }
     // A challenge or manifest we could not obtain, or files we could not read:
     // attestation should have run and did not. Carry the reason so a launch the
@@ -447,7 +486,12 @@ async function attestInstallation(
       ? error.message.replace(/[.]?\s*$/, ".")
       : "the integrity service could not be reached.";
     console.warn("Integrity attestation could not complete", { message: reason });
-    return { status: "unavailable", reason };
+    await applyGameplayPatchMode(
+      root,
+      resolveBundledGameplayPatchPath(),
+      fallbackMode,
+    ).catch(() => undefined);
+    return { status: "unavailable", reason, clientPatchMode: fallbackMode };
   }
 }
 
@@ -961,6 +1005,9 @@ function registerIpc(): void {
           bundledShimPath: resolveBundledShimPath(),
           bundledVivoxProxyPath: resolveBundledVivoxProxyPath(),
           bundledVivoxRuntimePath: resolveBundledVivoxRuntimePath(),
+          bundledGameplayPatchPath: resolveBundledGameplayPatchPath(),
+          clientPatchModeFallback:
+            await readCachedGameplayPatchMode(join(app.getPath("userData"))) ?? "patched",
           attest: () => attestInstallation(launchCredential.playerKey, launchRuntime),
           launcherVersion: app.getVersion(),
           diagnostics: diagnosticLaunch?.hooks,

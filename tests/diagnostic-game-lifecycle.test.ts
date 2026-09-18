@@ -12,7 +12,10 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 vi.mock('../electron/services/path-policy.js', () => ({ validateInstallDestination: async (root: string) => root }));
 vi.mock('../electron/services/installer.js', () => ({ readInstallationMarker: async () => ({ schemaVersion: 1, installId: 'fixture' }) }));
 vi.mock('../electron/services/vivox-client.js', () => ({ deployVivoxCompatibility: async () => undefined }));
-vi.mock('../electron/services/retired-gameplay-patch.js', () => ({ removeRetiredGameplayPatch: async () => undefined }));
+vi.mock('../electron/services/gameplay-patch.js', () => ({
+  assertGameplayPatchState: async () => undefined,
+  applyGameplayPatchMode: async () => "up-to-date",
+}));
 vi.mock('../electron/services/client-config.js', () => ({ synchronizeClientConfig: (current: string) => current,
   validateLocalCreateSessionUrl: (url: string) => url }));
 vi.mock('../electron/services/launch-ticket.js', () => ({ assertLaunchTicketFresh: () => undefined,
@@ -57,6 +60,7 @@ async function fixture() {
     identity: { playerKey: 'test-only-player-key' } as LaunchRequest['identity'],
     runtime: RUNTIME_CONFIGS.test, logsRoot: join(root, 'logs'), bundledShimPath: join(root, 'bundled-shim.dll'),
     bundledVivoxProxyPath: join(root, 'unused-proxy.dll'), bundledVivoxRuntimePath: join(root, 'unused-runtime.dll'),
+    bundledGameplayPatchPath: join(root, 'unused-dinput8.dll'), clientPatchModeFallback: 'clean',
     diagnostics, onExit: vi.fn(),
   };
   return { launcher: new GameLauncher(), request, diagnostics, child: () => children.at(-1)! };

@@ -28,10 +28,28 @@ describe("launcher locales", () => {
     ).toBe("The mandatory ROTK crouch patch was not activated correctly.");
     expect(
       localizeServiceError(
-        "Le patch gameplay retiré n’a pas pu être supprimé. Ferme H1Z1 puis réessaie.",
+        "Le patch sprint ROTK n’a pas pu être supprimé. Ferme H1Z1 puis réessaie.",
         "en",
       ),
-    ).toBe("The retired gameplay patch could not be removed. Close H1Z1 and try again.");
+    ).toBe("The ROTK sprint patch could not be removed. Close H1Z1 and try again.");
+    expect(
+      localizeServiceError(
+        "Cette version de H1Z1 n’est pas compatible avec le patch sprint ROTK. Vérifie les fichiers du jeu dans Steam puis réessaie.",
+        "en",
+      ),
+    ).toBe("This H1Z1 version is not compatible with the ROTK sprint patch. Verify the game files in Steam and try again.");
+    expect(
+      localizeServiceError(
+        "Le patch sprint ROTK embarqué est invalide.",
+        "en",
+      ),
+    ).toBe("The bundled ROTK sprint patch is invalid.");
+    expect(
+      localizeServiceError(
+        "Le marqueur du patch sprint ROTK n’a pas pu être écrit. Ferme H1Z1 puis réessaie.",
+        "en",
+      ),
+    ).toBe("The ROTK sprint patch marker could not be written. Close H1Z1 and try again.");
     expect(
       localizeServiceError(
         "Un dinput8.dll inconnu est présent dans le client ROTK. Supprime-le ou réimporte un client propre.",

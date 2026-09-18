@@ -1,6 +1,6 @@
 # Spec — Launcher self-update via GitHub Releases
 
-Issue: [#1](https://github.com/MzKaxD/rotk-launcher/issues/1)
+Issue: [#1](https://github.com/h1z1rotk/rotk-launcher/issues/1)
 
 ## 1. Approach
 
@@ -18,7 +18,7 @@ user-driven (`autoDownload = false`, no install-on-quit). Rationale:
 ## 2. Configuration changes
 
 - **package.json**: add the `electron-updater` dependency; in `build`: add
-  `publish: [{ "provider": "github", "owner": "MzKaxD", "repo": "rotk-launcher" }]`
+  `publish: [{ "provider": "github", "owner": "h1z1rotk", "repo": "rotk-launcher" }]`
   (required to generate the embedded `app-update.yml` and the `latest.yml` next to the
   installer) and set `win.publisherName` to the certificate CN (required by the
   signature verification).

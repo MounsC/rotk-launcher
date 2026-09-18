@@ -15,14 +15,14 @@ happens when the command runs or this PR merges.
 
 ## Relationship to the other PRs
 
-- [Launcher #38](https://github.com/MzKaxD/rotk-launcher/pull/38): the candidate
+- [Launcher #38](https://github.com/h1z1rotk/rotk-launcher/pull/38): the candidate
   retains the native `IsModerator()` gate before opening the O-key admin panel,
   with closing still available. This controls opening the UI; server permissions
   continue to authorize admin actions.
-- [Launcher #39](https://github.com/MzKaxD/rotk-launcher/pull/39): the candidate
+- [Launcher #39](https://github.com/h1z1rotk/rotk-launcher/pull/39): the candidate
   retains all four repaired PreGame settings panels. Its `ui_x64_2.pack2` is the
   validated settings pack with only `TrialsTopTenWindow.gfx` replaced.
-- [Server #370](https://github.com/MzKaxD/returnoftheking/pull/370), merged as
+- [Server #370](https://github.com/h1z1rotk/returnoftheking/pull/370), merged as
   `6cba76b5895cb70ca23e395d5846c2cb7f45e564`, supplies the data and reproducible
   rank UI builder. Staff gating, the respawn guard and automatic region selection
   are retained in the input root before the rank transform.

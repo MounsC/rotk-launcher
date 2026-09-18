@@ -1,6 +1,6 @@
 # Asset packs — publishing custom assets through the dedicated GitHub repo
 
-Issue: [#10](https://github.com/MzKaxD/rotk-launcher/issues/10)
+Issue: [#10](https://github.com/h1z1rotk/rotk-launcher/issues/10)
 
 For the combined BR1315 rank menu, staff gate and settings update, use the
 [rank menu release recipe](rank-menu-assets.md). Its three packs must be published
