@@ -208,6 +208,10 @@ jobs:
             throw "Le sidecar vivoxsdk_x64.dll.sha256 ne correspond pas au DLL : $sidecar"
           }
 
+      - name: Compiler et vérifier le proxy sprint shotgun
+        shell: pwsh
+        run: npm run prepare:gameplay-patch
+
       - name: Typer, tester et construire le launcher
         run: npm run build
 
@@ -222,4 +226,6 @@ jobs:
             dist-electron/
             native/steamshim/dist/steam_api64.dll
             native/steamshim/dist/steam_api64.dll.sha256
+            resources/patches/dinput8.dll
+            resources/patches/dinput8.dll.sha256
             resources/patches/vivoxsdk_x64.dll

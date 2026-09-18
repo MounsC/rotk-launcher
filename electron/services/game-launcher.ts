@@ -15,7 +15,10 @@ import {
   createLaunchTicket,
   type LaunchTicketIdentity,
 } from "./launch-ticket.js";
-import { removeRetiredGameplayPatch } from "./retired-gameplay-patch.js";
+import {
+  assertGameplayPatchState,
+  type GameplayPatchMode,
+} from "./gameplay-patch.js";
 import { deployVivoxCompatibility } from "./vivox-client.js";
 
 const GAME_STARTUP_STABILITY_MS = 3_000;
@@ -41,9 +44,15 @@ export type AttestationOutcome =
        * another time.
        */
       readonly hwid?: Record<string, string>;
+      /** Server-directed shotgun sprint client-patch mode for this launch. */
+      readonly clientPatchMode: GameplayPatchMode;
     }
-  | { readonly status: "not-applicable" }
-  | { readonly status: "unavailable"; readonly reason: string };
+  | { readonly status: "not-applicable"; readonly clientPatchMode: GameplayPatchMode }
+  | {
+      readonly status: "unavailable";
+      readonly reason: string;
+      readonly clientPatchMode: GameplayPatchMode;
+    };
 
 export interface LaunchRequest {
   config: LauncherConfig;
@@ -53,6 +62,13 @@ export interface LaunchRequest {
   bundledShimPath: string;
   bundledVivoxProxyPath: string;
   bundledVivoxRuntimePath: string;
+  bundledGameplayPatchPath: string;
+  /**
+   * Mode reapplied when the server does not run attestation (development or
+   * unconfigured backend). The production path always uses the signed
+   * challenge directive instead.
+   */
+  clientPatchModeFallback: GameplayPatchMode;
   /**
    * Integrity attestation hook. The launcher never self-exempts: it reports
    * what it observed and lets the backend decide what an absent attestation
@@ -153,6 +169,7 @@ async function prepareClient(
   root: string,
   localCreateSessionUrl: string,
   launchIdentity: LaunchTicketIdentity,
+  clientPatchMode: GameplayPatchMode,
 ): Promise<string> {
   // All subsequent I/O and the spawned process use the same physical root that
   // passed policy validation. This prevents a logical junction alias from
@@ -164,7 +181,10 @@ async function prepareClient(
     request.bundledVivoxProxyPath,
     request.bundledVivoxRuntimePath,
   );
-  await removeRetiredGameplayPatch(root);
+  // The attestation pass has already installed or removed the shotgun sprint
+  // proxy for the mode the server directed; preparation only rechecks it so a
+  // concurrent drift cannot ride into the process.
+  await assertGameplayPatchState(root, clientPatchMode);
 
   const configPath = join(root, "ClientConfig.ini");
   const configBackupPath = join(root, "ClientConfig.original.ini");
@@ -297,21 +317,21 @@ export class GameLauncher {
     await mkdir(localLogs, { recursive: true });
     await mkdir(failureLogs, { recursive: true });
 
-    // Repair the remaining mandatory native client patch and retire the exact
-    // 1.4.3 gameplay DLL before attestation. An unknown dinput8.dll is left
-    // untouched and blocks launch instead of being silently deleted or loaded.
+    // Repair the mandatory Vivox/crouch compatibility proxy before
+    // attestation. The shotgun sprint proxy is applied by the attestation pass
+    // itself, once the signed challenge has named its mode; an unknown
+    // dinput8.dll blocks the launch instead of being silently deleted.
     await deployVivoxCompatibility(
       installationRoot,
       request.bundledVivoxProxyPath,
       request.bundledVivoxRuntimePath,
     );
-    await removeRetiredGameplayPatch(installationRoot);
 
     // Integrity attestation runs before the ticket exists: the whole point is
     // that a tampered installation never obtains one.
     const outcome = request.attest
       ? await request.attest()
-      : { status: "not-applicable" } as const;
+      : { status: "not-applicable", clientPatchMode: request.clientPatchModeFallback } as const;
 
     // The durable website key reaches only the HTTPS account service. H1Z1
     // receives a short ticket and the Steam identity authenticated by it.
@@ -328,6 +348,7 @@ export class GameLauncher {
         installationRoot,
         sessionGateway.createSessionUrl,
         launchIdentity,
+        outcome.clientPatchMode,
       );
 
       // Capture the prepared asset/configuration state before the first frame.
@@ -345,7 +366,7 @@ export class GameLauncher {
         // consumed by the request above and is not replayable.
         const refreshed = request.attest
           ? await request.attest()
-          : { status: "not-applicable" } as const;
+          : { status: "not-applicable", clientPatchMode: request.clientPatchModeFallback } as const;
         launchIdentity = await createLaunchTicket(
           request.identity.playerKey,
           request.runtime.launchTicketUrl,
@@ -357,6 +378,7 @@ export class GameLauncher {
           installationRoot,
           sessionGateway.createSessionUrl,
           launchIdentity,
+          refreshed.clientPatchMode,
         );
         assertLaunchTicketFresh(launchIdentity);
       }

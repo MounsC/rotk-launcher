@@ -30,6 +30,7 @@ import {
   manifestPathKey,
   TRUSTED_ATTESTATION_KEYS,
   verifyAttestationSignature,
+  type AttestationClientPatchMode,
   type ManifestFileEntry,
   type ObservedDeviation,
 } from "../../shared/attestation.js";
@@ -55,6 +56,12 @@ export interface AttestationChallenge {
    * signature. Absent from a server that names none: then the core five.
    */
   hwidSlots?: string[];
+  /**
+   * Server-directed shotgun sprint client-patch mode (launcher 2.0.14+),
+   * covered by the signature. Absent on older servers; the caller then keeps
+   * the client clean, which is what those servers' policies expect.
+   */
+  clientPatchMode?: AttestationClientPatchMode;
 }
 
 export interface AttestationProgress {
@@ -171,6 +178,15 @@ function parseChallenge(
     }
     hwidSlots = [...(raw as string[])];
   }
+  // The client-patch mode is optional and strict: two exact strings, signed
+  // with the rest so a spoofed backend cannot silently toggle the local patch.
+  let clientPatchMode: AttestationClientPatchMode | undefined;
+  if (value.clientPatchMode !== undefined) {
+    if (value.clientPatchMode !== "patched" && value.clientPatchMode !== "clean") {
+      throw attestationError("Invalid attestation challenge");
+    }
+    clientPatchMode = value.clientPatchMode;
+  }
   const challenge: AttestationChallenge = {
     challengeId: value.challengeId as string,
     nonce: value.nonce as string,
@@ -182,6 +198,7 @@ function parseChallenge(
     keyId: value.keyId as string,
     signature: value.signature as string,
     ...(hwidSlots === undefined ? {} : { hwidSlots }),
+    ...(clientPatchMode === undefined ? {} : { clientPatchMode }),
   };
   if (Number.isNaN(Date.parse(challenge.expiresAt))) {
     throw attestationError("Invalid attestation challenge");

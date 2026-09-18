@@ -121,9 +121,14 @@ jobs:
           if ($proxyHash -ne "766A7C84B10B0C9F2A6F3EDB3C58AB8C8E2FFB6B358C0CEF52966DB82EB6957A") {
             throw "Unexpected Vivox proxy SHA-256: $proxyHash"
           }
+          npm run prepare:gameplay-patch
+          $gameplayHash = (Get-FileHash -LiteralPath "resources\patches\dinput8.dll" -Algorithm SHA256).Hash
+          if ($gameplayHash -ne "36FBA2037B0C9B1829E7C7E8BBEDBCF5A962F495DE4E8C63880B785745DCAC3A") {
+            throw "Unexpected shotgun sprint proxy SHA-256: $gameplayHash"
+          }
           # Les sidecars alimentent les overrides d'attestation embarqués :
           # une divergence signalerait chaque joueur honnête en écart.
-          foreach ($patch in @("vivoxsdk_x64.dll", "vivoxsdk_x64_v5.dll")) {
+          foreach ($patch in @("vivoxsdk_x64.dll", "vivoxsdk_x64_v5.dll", "dinput8.dll")) {
             $dllHash = (Get-FileHash -LiteralPath "resources\patches\$patch" -Algorithm SHA256).Hash.ToLowerInvariant()
             $sidecar = ((Get-Content -LiteralPath "resources\patches\$patch.sha256" -Raw) -split "\s+")[0]
             if ($sidecar -ne $dllHash) {
