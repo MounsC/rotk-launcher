@@ -6,7 +6,7 @@ This recipe packages that extension against the published assets-v1.8.1 catalog.
 It preserves the administrator badge, rank menu, settings panels, staff UI gate
 and every unrelated catalog entry.
 
-The native voice-rank fix in launcher [#42](https://github.com/MzKaxD/rotk-launcher/pull/42)
+The native voice-rank fix in launcher [#42](https://github.com/h1z1rotk/rotk-launcher/pull/42)
 is also required. This packaging change does not itself install anything or
 publish a release. No proprietary client assets or simulated participants are
 stored in the repository.
