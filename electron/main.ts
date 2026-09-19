@@ -48,6 +48,7 @@ import {
   resolveBundledVivoxRuntimePath,
   resolveBundledGameplayPatchPath,
   resolveBundledDiagnosticsPath,
+  resolveBundledDeathcommPath,
 } from "./constants.js";
 import { ConfigStore } from "./services/config-store.js";
 import { adoptExistingClient, installClient } from "./services/installer.js";
@@ -1040,6 +1041,7 @@ function registerIpc(): void {
           bundledVivoxProxyPath: resolveBundledVivoxProxyPath(),
           bundledVivoxRuntimePath: resolveBundledVivoxRuntimePath(),
           bundledGameplayPatchPath: resolveBundledGameplayPatchPath(),
+          bundledDeathcommPath: resolveBundledDeathcommPath(),
           clientPatchModeFallback:
             await readCachedGameplayPatchMode(join(app.getPath("userData"))) ?? "patched",
           attest: () => attestInstallation(launchCredential.playerKey, launchRuntime),
