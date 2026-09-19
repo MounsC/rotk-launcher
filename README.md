@@ -96,25 +96,42 @@ de sa taille et de son SHA-256. Un fichier inconnu, un lien ou un répertoire
 portant ce nom n’est jamais supprimé automatiquement et bloque le lancement
 avec une erreur explicite.
 
-## Droits administrateur et ancre TPM (2.0.12)
+## Droits d'exécution et ancre TPM (2.0.12 → 2.0.15)
 
-Depuis 2.0.12 le launcher demande les droits administrateur au démarrage
-(`requestedExecutionLevel: requireAdministrator`) et l'installeur s'installe
-pour la machine (`perMachine`). La raison est l'**ancre TPM** (issue
-h1z1rotk/returnoftheking#320 §A) : en plus de la clé TPM de niveau 1, le launcher
-crée une clé d'identité dans le TPM (`rotk-tpm-aik-v1`, Platform Crypto
-Provider) et la lie à la clé d'endossement (EK) du TPM par activation de
-crédential — le serveur chiffre un secret vers l'EK, seul ce TPM le retrouve
-(`electron/services/tpm-anchor.ts`). Windows refuse cette commande
-(`TPM2_ActivateCredential`) et la lecture du certificat EK à un utilisateur
-standard ; élevé, le launcher les obtient, et le serveur peut un jour distinguer
-un vrai TPM d'une clé logicielle.
+Le launcher s'exécute avec les droits de l'utilisateur qui le lance
+(`requestedExecutionLevel: asInvoker`) et l'installeur s'installe pour la
+machine (`perMachine`, sous `Program Files` ; la mise à jour passe par
+l'installeur assisté, qui demande lui-même l'élévation).
 
-Tout est en observation : sans TPM, sans élévation ou sans certificat, le
-lancement se déroule exactement comme avant et le serveur ne fait que
-journaliser. Le launcher n'envoie de la clé d'endossement que sa partie
-publique et ses certificats ; le serveur n'en garde qu'un hash à clé et
-l'émetteur de la chaîne.
+La 2.0.12 — publiée sous le numéro 2.0.14 — demandait les droits
+administrateur au démarrage (`requireAdministrator`) pour l'**ancre TPM**
+(issue h1z1rotk/returnoftheking#320 §A) : Windows refuse à un utilisateur
+standard `TPM2_ActivateCredential` et la lecture du certificat de la clé
+d'endossement (EK). Élevé, Chromium n'arrivait plus à créer ses processus GPU
+et renderer sur une partie des machines (`GPU process launch failed:
+error_code=18`, `Renderer process launch-failed`) et abandonnait le processus
+(`GPU process isn't usable. Goodbye.`, exception `0x80000003`) : le launcher
+ne s'ouvrait plus (issue h1z1rotk/rotk-launcher#59). Rien dans l'application
+n'intercepte cet abandon ; la 2.0.15 revient à `asInvoker`.
+
+L'ancre reste telle que le code la prévoit sans élévation : en plus de la clé
+TPM de niveau 1, le launcher crée une clé d'identité dans le TPM
+(`rotk-tpm-aik-v1`, Platform Crypto Provider) et signe le même message ; la
+partie publique de l'EK est lue (`PCP_EKPUB`, accessible sans élévation), le
+certificat EK n'est pas envoyé et l'activation échoue, ce que le serveur
+journalise (`electron/services/tpm-anchor.ts`). L'activation et la lecture du
+certificat relèveront d'un assistant élevé ponctuel, lancé une fois à
+l'enrôlement, jamais du processus entier.
+
+Tout est en observation : sans TPM ou sans certificat, le lancement se déroule
+exactement comme avant et le serveur ne fait que journaliser. Le launcher
+n'envoie de la clé d'endossement que sa partie publique ; le serveur n'en
+garde qu'un hash à clé et l'émetteur de la chaîne.
+
+Le démarrage écrit ses étapes dans `%APPDATA%\ROTK Launcher\startup.log` (la
+course précédente dans `startup.previous.log`) : version, création et
+affichage de la fenêtre, services prêts, et les processus enfants qui se
+terminent anormalement avec la raison donnée par Chromium.
 
 ## Authentification du compte joueur
 

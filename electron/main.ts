@@ -95,6 +95,7 @@ import {
   type AttestationProgress,
 } from "./services/integrity-attestation.js";
 import { DiagnosticController } from "./services/diagnostic-controller.js";
+import { StartupLog } from "./services/startup-log.js";
 import { createHash } from 'node:crypto';
 import { uploadDiagnostic } from "./services/diagnostic-upload.js";
 import { collectDiagnosticClientContext } from "./services/diagnostic-client-context.js";
@@ -118,8 +119,23 @@ if (!app.isPackaged && process.env.ROTK_USER_DATA_DIR) {
   // product-name based, which made development and packaged builds drift.
   app.setPath("userData", join(app.getPath("appData"), APP_NAME));
 }
+// Breadcrumbs from here to the first paint, in %APPDATA%\ROTK Launcher\startup.log.
+const startupLog = new StartupLog(app.getPath("userData"));
 const singleInstanceLock = app.requestSingleInstanceLock();
-if (!singleInstanceLock) app.quit();
+if (singleInstanceLock) {
+  startupLog.begin(
+    `start ${app.getVersion()} packaged=${app.isPackaged} electron=${process.versions.electron} windows=${process.getSystemVersion()}`,
+  );
+} else {
+  // Another launcher owns this user's lock: it receives "second-instance" and
+  // this process leaves. Nothing else may run in it — the lifecycle hooks at
+  // the bottom are registered behind the lock, otherwise whenReady() would
+  // start a full initialize() in a process that is already quitting, racing
+  // the owner on the same files (2.0.14 reports: a first instance stuck
+  // without a window made every further click spawn a process that died at
+  // once).
+  app.quit();
+}
 
 const usesIsolatedDevelopmentData = !app.isPackaged && Boolean(process.env.ROTK_USER_DATA_DIR);
 const legacyUserDataDirectories = usesIsolatedDevelopmentData
@@ -137,8 +153,18 @@ let assetSync: AssetSyncService;
 let launcherUpdate: LauncherUpdateService;
 let diagnostics: DiagnosticController;
 let debugSettingWrite = false;
+// Resolved once initialize() has built the services the IPC handlers use. The
+// window is created before that, so handlers wait here instead of touching an
+// undefined store.
+let servicesInitialized = false;
+let resolveServicesReady: () => void = () => undefined;
+const servicesReady = new Promise<void>((resolve) => {
+  resolveServicesReady = resolve;
+});
 const gameLauncher = new GameLauncher();
 const LAUNCHER_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1_000;
+// The window is shown at the latest this long after its creation, painted or not.
+const WINDOW_SHOW_DEADLINE_MS = 5_000;
 let installAbortController: AbortController | null = null;
 let phase: LauncherPhase = "unconfigured";
 let sourceRoot: string | null = null;
@@ -564,6 +590,9 @@ function identitySummary(): PlayerIdentitySummary {
 }
 
 async function broadcastSnapshot(): Promise<void> {
+  // Before the services exist there is no snapshot to build; the renderer's
+  // own getSnapshot() call waits for them.
+  if (!servicesInitialized) return;
   const value = await snapshot();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IPC_CHANNELS.snapshotChanged, value);
@@ -605,9 +634,14 @@ function isTrustedRendererUrl(candidate: string): boolean {
 
 function trustedHandler<T extends unknown[], R>(
   handler: (event: IpcMainInvokeEvent, ...args: T) => Promise<R> | R,
+  options: { waitForServices?: boolean } = {},
 ): (event: IpcMainInvokeEvent, ...args: T) => Promise<R> {
   return async (event, ...args) => {
     ensureTrustedSender(event);
+    // The window opens before initialize() finishes; every handler that reads
+    // a store waits for it. Window controls do not, so a launcher stuck in
+    // initialize() can still be closed.
+    if (options.waitForServices !== false) await servicesReady;
     return handler(event, ...args);
   };
 }
@@ -1149,8 +1183,8 @@ function registerIpc(): void {
     }),
   );
 
-  ipcMain.handle(IPC_CHANNELS.minimizeWindow, trustedHandler(async () => mainWindow?.minimize()));
-  ipcMain.handle(IPC_CHANNELS.closeWindow, trustedHandler(async () => mainWindow?.close()));
+  ipcMain.handle(IPC_CHANNELS.minimizeWindow, trustedHandler(async () => mainWindow?.minimize(), { waitForServices: false }));
+  ipcMain.handle(IPC_CHANNELS.closeWindow, trustedHandler(async () => mainWindow?.close(), { waitForServices: false }));
 }
 
 function createWindow(): BrowserWindow {
@@ -1183,8 +1217,40 @@ function createWindow(): BrowserWindow {
   window.webContents.once("did-finish-load", () => {
     window.webContents.on("will-navigate", (event) => event.preventDefault());
   });
-  window.once("ready-to-show", () => window.show());
+  // Shown on the first of: the renderer's first paint, its load completing, or
+  // a deadline. Before 2.0.15 only ready-to-show showed the window, so a
+  // renderer that never painted left a live process and no window at all.
+  let shown = false;
+  const showOnce = (source: string): void => {
+    if (shown || window.isDestroyed()) return;
+    shown = true;
+    window.show();
+    startupLog.mark("window-shown", source);
+  };
+  window.once("ready-to-show", () => showOnce("ready-to-show"));
+  window.webContents.once("did-finish-load", () => showOnce("did-finish-load"));
+  const showDeadline = setTimeout(() => showOnce("deadline"), WINDOW_SHOW_DEADLINE_MS);
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedUrl, isMainFrame) => {
+    // -3 (ABORTED) is a navigation replaced by another, not a failed page.
+    if (!isMainFrame || errorCode === -3) return;
+    startupLog.mark("did-fail-load", `${errorCode} ${errorDescription}`);
+    showOnce("did-fail-load");
+  });
+  // A renderer that cannot start (2.0.14: "Renderer process launch-failed") or
+  // crashes leaves a window with nothing in it. Say so once and leave the
+  // decision to the player: quitting here would take a running game's launcher
+  // away with it.
+  let rendererFailureReported = false;
+  window.webContents.on("render-process-gone", (_event, details) => {
+    startupLog.mark("render-process-gone", `${details.reason} exitCode=${details.exitCode}`);
+    if (details.reason === "clean-exit" || rendererFailureReported) return;
+    rendererFailureReported = true;
+    void diagnostics?.recordLauncherError("launcher_renderer_gone", new Error(details.reason)).catch(() => undefined);
+    const copy = MAIN_COPY[currentLocale];
+    dialog.showErrorBox(copy.startupTitle, `${copy.rendererGone(details.reason)}\n\n${copy.startupSafety}`);
+  });
   window.on("closed", () => {
+    clearTimeout(showDeadline);
     if (mainWindow === window) mainWindow = null;
   });
   Menu.setApplicationMenu(null);
@@ -1196,6 +1262,15 @@ function createWindow(): BrowserWindow {
 }
 
 async function initialize(): Promise<void> {
+  startupLog.mark("ready");
+  // The window comes first: a step below that stalls (a sleeping drive under
+  // the installation root, a slow profile) still leaves a launcher on screen,
+  // and a renderer or GPU child that cannot start is seen and logged rather
+  // than leaving a process without a window. The handlers registered here
+  // wait for the services through servicesReady.
+  registerIpc();
+  mainWindow = createWindow();
+  startupLog.mark("window-created");
   configStore = new ConfigStore(
     app.getPath("userData"),
     legacyUserDataDirectories,
@@ -1218,6 +1293,7 @@ async function initialize(): Promise<void> {
     join(app.getPath("userData"), "player-key.v1.json"),
   );
   playerKeys = await playerKeyStore.load();
+  startupLog.mark("player-keys-loaded");
   updateFeed = new UpdateFeedService(app.getPath("userData"));
   assetSync = new AssetSyncService({
     userDataDirectory: app.getPath("userData"),
@@ -1230,6 +1306,7 @@ async function initialize(): Promise<void> {
     },
   });
   const config = await configStore.load();
+  startupLog.mark("config-loaded");
   assetSyncEnabled = config.assetSyncEnabled ?? true;
   selectedServerId = config.serverId ?? DEFAULT_SERVER_ID;
   selectedRole = config.role ?? DEFAULT_PLAYER_ROLE;
@@ -1245,6 +1322,7 @@ async function initialize(): Promise<void> {
       lastErrorRaw = rawErrorMessage(error);
     }
   }
+  startupLog.mark("installation-checked", `phase=${phase}`);
   launcherUpdate = new LauncherUpdateService({
     // In development there is no installed package to update against;
     // the updater stays inert and the snapshot reports "idle".
@@ -1268,8 +1346,9 @@ async function initialize(): Promise<void> {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.diagnosticsChanged, state);
     } });
   await diagnostics.initialize(config.diagnosticCaptureEnabled ?? true, config.diagnosticUploadConsent === 1 && config.debugSessionEnabled === true).catch(() => undefined);
-  registerIpc();
-  mainWindow = createWindow();
+  servicesInitialized = true;
+  resolveServicesReady();
+  startupLog.mark("services-ready");
   updates = await updateFeed.getLatest();
   await broadcastSnapshot();
   void launcherUpdate.check();
@@ -1278,37 +1357,58 @@ async function initialize(): Promise<void> {
   setInterval(() => void refreshServerStatus(), SERVER_STATUS_POLL_INTERVAL_MS);
 }
 
-app.on("second-instance", () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.focus();
-});
-
-void app
-  .whenReady()
-  .then(async () => {
-    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-    session.defaultSession.setPermissionCheckHandler(() => false);
-    await initialize();
-  })
-  .catch((error: unknown) => {
-    const copy = MAIN_COPY[currentLocale];
-    dialog.showErrorBox(
-      copy.startupTitle,
-      `${errorMessage(error)}\n\n${copy.startupSafety}`,
-    );
-    app.quit();
+if (singleInstanceLock) {
+  app.on("second-instance", () => {
+    if (!mainWindow) {
+      // Still starting: the window is on its way.
+      if (!servicesInitialized) return;
+      // The window was closed while the game ran (window-all-closed keeps the
+      // process alive for it): give it back instead of ignoring the click.
+      quitWhenGameExits = false;
+      mainWindow = createWindow();
+      return;
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
   });
 
-app.on("window-all-closed", () => {
-  if (gameLauncher.isRunning() || phase === "launching" || phase === "running" || diagnosticWorkInProgress()) {
-    quitWhenGameExits = true;
-    return;
-  }
-  app.quit();
-});
+  // GPU, utility and renderer children that end abnormally, with the reason
+  // Chromium gives (2.0.14: GPU "launch-failed" six times, then the abort).
+  app.on("child-process-gone", (_event, details) => {
+    startupLog.mark(
+      "child-process-gone",
+      `${details.type} ${details.reason} exitCode=${details.exitCode}${details.name ? ` name=${details.name}` : ""}`,
+    );
+  });
+
+  void app
+    .whenReady()
+    .then(async () => {
+      session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+      session.defaultSession.setPermissionCheckHandler(() => false);
+      await initialize();
+    })
+    .catch((error: unknown) => {
+      startupLog.mark("startup-failed", errorMessage(error));
+      const copy = MAIN_COPY[currentLocale];
+      dialog.showErrorBox(
+        copy.startupTitle,
+        `${errorMessage(error)}\n\n${copy.startupSafety}`,
+      );
+      app.quit();
+    });
+
+  app.on("window-all-closed", () => {
+    if (gameLauncher.isRunning() || phase === "launching" || phase === "running" || diagnosticWorkInProgress()) {
+      quitWhenGameExits = true;
+      return;
+    }
+    app.quit();
+  });
+}
 
 process.on("uncaughtException", (error) => {
+  startupLog.mark("uncaught-exception", error.message);
   void diagnostics?.recordLauncherError("launcher_uncaught_exception", error).catch(() => undefined);
   lastErrorRaw = `Erreur launcher ${randomUUID().slice(0, 8)} : ${error.message}`;
   phase = "error";

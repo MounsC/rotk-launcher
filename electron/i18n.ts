@@ -30,6 +30,8 @@ export const MAIN_COPY = {
     },
     startupTitle: "ROTK Launcher could not start",
     startupSafety: "No H1Z1 files were modified.",
+    rendererGone: (reason: string) =>
+      `The launcher window's process stopped (${reason}). Restart the launcher; if this happens again, send %APPDATA%\\ROTK Launcher\\startup.log to the ROTK team.`,
     launcherError: (id: string, message: string) => `Launcher error ${id}: ${message}`,
     update: {
       unavailable: "Launcher updates are only available in the installed launcher.",
@@ -71,6 +73,8 @@ export const MAIN_COPY = {
     },
     startupTitle: "ROTK Launcher ne peut pas démarrer",
     startupSafety: "Aucun fichier H1Z1 n’a été modifié.",
+    rendererGone: (reason: string) =>
+      `Le processus de la fenêtre du launcher s’est arrêté (${reason}). Relance le launcher ; si cela se reproduit, envoie %APPDATA%\\ROTK Launcher\\startup.log à l’équipe ROTK.`,
     launcherError: (id: string, message: string) => `Erreur launcher ${id} : ${message}`,
     update: {
       unavailable: "Les mises à jour ne sont disponibles que depuis le launcher installé.",
