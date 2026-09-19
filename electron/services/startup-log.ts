@@ -4,11 +4,13 @@
  * Until its window is on screen the launcher cannot say what it is doing: the
  * diagnostics service is built late in initialize(), and a Chromium abort
  * leaves only a Windows Error Reporting entry. Launcher 2.0.14 died exactly
- * there (issue #59): elevated, the process could not spawn its GPU and
- * renderer children and Chromium ended it with "GPU process isn't usable.
- * Goodbye." — nothing on disk said which step had been reached. This log
- * answers that question after the fact: one line per step, written
- * synchronously so a hard abort right after a step still leaves its line.
+ * there (issue #59): its requireAdministrator manifest applied to the GPU and
+ * renderer children Chromium spawns from the same executable, sessions of the
+ * built-in Administrator account could not create them, and Chromium ended
+ * the process with "GPU process isn't usable. Goodbye." — nothing on disk said
+ * which step had been reached. This log answers that question after the fact:
+ * one line per step, written synchronously so a hard abort right after a step
+ * still leaves its line.
  *
  * Writes never throw. A launcher that cannot write its breadcrumbs must still
  * start.

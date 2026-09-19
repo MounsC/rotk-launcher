@@ -107,12 +107,21 @@ La 2.0.12 — publiée sous le numéro 2.0.14 — demandait les droits
 administrateur au démarrage (`requireAdministrator`) pour l'**ancre TPM**
 (issue h1z1rotk/returnoftheking#320 §A) : Windows refuse à un utilisateur
 standard `TPM2_ActivateCredential` et la lecture du certificat de la clé
-d'endossement (EK). Élevé, Chromium n'arrivait plus à créer ses processus GPU
-et renderer sur une partie des machines (`GPU process launch failed:
-error_code=18`, `Renderer process launch-failed`) et abandonnait le processus
-(`GPU process isn't usable. Goodbye.`, exception `0x80000003`) : le launcher
-ne s'ouvrait plus (issue h1z1rotk/rotk-launcher#59). Rien dans l'application
-n'intercepte cet abandon ; la 2.0.15 revient à `asInvoker`.
+d'endossement (EK). Or Chromium lance ses processus GPU, renderer et
+utilitaires comme de nouvelles instances de l'exécutable du launcher, sous des
+jetons restreints par le sandbox : l'exigence du manifeste s'applique à chacun
+de ces enfants. Sur une session qui tourne avec un jeton administrateur
+complet sans dédoublement UAC — le compte `Administrator` intégré, courant sur
+les Windows préinstallés ou « ghostés » — Windows refuse de les créer
+(`GPU process launch failed: error_code=18`, `Renderer process launch-failed`)
+et Chromium abandonne le processus (`GPU process isn't usable. Goodbye.`,
+exception `0x80000003`) : le launcher ne s'ouvrait plus (issue
+h1z1rotk/rotk-launcher#59). `--no-sandbox` le confirme, les enfants reprenant
+alors le jeton du parent ; l'emplacement d'installation n'y est pour rien (une
+copie sous `%LOCALAPPDATA%` échoue de même, les ACL de `Program Files` sont
+celles par défaut). La 2.0.11, `asInvoker`, tournait sur ces mêmes sessions et
+fonctionnait ; rien dans l'application n'intercepte cet abandon, la 2.0.15 y
+revient.
 
 L'ancre reste telle que le code la prévoit sans élévation : en plus de la clé
 TPM de niveau 1, le launcher crée une clé d'identité dans le TPM

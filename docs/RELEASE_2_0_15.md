@@ -3,13 +3,20 @@
 Hotfix for 2.0.14, which did not open on part of the player base (issue #59).
 
 2.0.14 was the first published build to request administrator rights
-(`requireAdministrator`, introduced by 2.0.12 for the TPM anchor). From an
-elevated parent, Chromium could not create its sandboxed GPU and renderer
-children on some Windows configurations — `GPU process launch failed:
-error_code=18`, `Renderer process launch-failed`, then the abort `GPU process
-isn't usable. Goodbye.` (exception `0x80000003` in the WER report). Players
-saw either a process that died at once or three processes and no window.
-Nothing in the application can catch that abort.
+(`requireAdministrator`, introduced by 2.0.12 for the TPM anchor). Chromium
+starts its GPU, renderer and utility processes as new instances of the
+launcher executable under restricted sandbox tokens, so that requirement
+applied to every child. On sessions that run with a full administrator token
+without UAC's split — the built-in `Administrator` account, common on
+preinstalled or ghosted Windows — Windows refused to create them: `GPU process
+launch failed: error_code=18`, `Renderer process launch-failed`, then the abort
+`GPU process isn't usable. Goodbye.` (exception `0x80000003` in the WER report).
+Players saw either a process that died at once or three processes and no
+window. `--no-sandbox` confirmed it (the children then run with the parent's
+token); the install location is not involved (a copy under `%LOCALAPPDATA%`
+fails the same way, the `Program Files` ACLs are the defaults). 2.0.11,
+`asInvoker`, ran on those same sessions and worked. Nothing in the application
+can catch that abort.
 
 Changes:
 
