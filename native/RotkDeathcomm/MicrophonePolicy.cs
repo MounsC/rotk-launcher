@@ -38,7 +38,7 @@ internal static class MicrophonePolicy
             if (key.Equals("MicrophoneVolume", StringComparison.OrdinalIgnoreCase))
             { if (volume != null) return false; volume = value; }
         }
-        return enabled == "1" && double.TryParse(volume, NumberStyles.Float, CultureInfo.InvariantCulture, out double level)
+        return enabled == "1" && VoicePolicy.ChatEnabled(text) && double.TryParse(volume, NumberStyles.Float, CultureInfo.InvariantCulture, out double level)
             && double.IsFinite(level) && level > 0 && level <= 100;
     }
 }

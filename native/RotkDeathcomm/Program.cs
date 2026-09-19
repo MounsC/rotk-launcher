@@ -68,6 +68,7 @@ internal sealed class DeathcommSession : IDisposable
     private readonly Configuration options;
     private readonly ICaptureIndicator indicator;
     private readonly Func<bool>? microphonePermission;
+    private readonly Func<float>? receptionGain;
     private readonly Func<long, IPlayback> createPlayback;
     private readonly Func<ICapture> createCapture;
     private readonly object gate = new();
@@ -84,10 +85,12 @@ internal sealed class DeathcommSession : IDisposable
     private int frameOffset;
     private bool disposed;
     public DeathcommSession(WebSocket socket, Configuration options, ICaptureIndicator indicator,
-        Func<bool>? microphonePermission = null, Func<long, IPlayback>? createPlayback = null, Func<ICapture>? createCapture = null)
+        Func<bool>? microphonePermission = null, Func<long, IPlayback>? createPlayback = null, Func<ICapture>? createCapture = null,
+        Func<float>? receptionGain = null)
     {
         this.socket = socket; this.options = options; this.indicator = indicator;
         this.microphonePermission = microphonePermission; this.createPlayback = createPlayback ?? (until => new Playback(until));
+        this.receptionGain = receptionGain;
         this.createCapture = createCapture ?? (() => new MicrophoneCapture(
             MicrophonePolicy.InputDevice(File.ReadAllText(Path.Combine(options.GameRoot, "UserOptions.ini")))));
     }
@@ -115,6 +118,15 @@ internal sealed class DeathcommSession : IDisposable
         }
         catch { return false; }
     }
+    private float ReceiveGain()
+    {
+        try
+        {
+            float gain = receptionGain?.Invoke() ?? VoicePolicy.ReceiveGain(File.ReadAllText(Path.Combine(options.GameRoot, "UserOptions.ini")));
+            return float.IsFinite(gain) && gain > 0 && gain <= 1 ? gain : 0;
+        }
+        catch { return 0; }
+    }
     private async Task Tick(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
@@ -124,8 +136,12 @@ internal sealed class DeathcommSession : IDisposable
             {
                 captureAllowed = captureId != null && MicrophoneAllowed();
                 stopId = captureId != null && (!captureAllowed || Environment.TickCount64 >= captureUntil) ? captureId : null;
+                float gain = listeners.Count == 0 ? 0 : ReceiveGain();
                 foreach (var entry in listeners.ToArray())
-                    if (Environment.TickCount64 >= entry.Value.Until) { entry.Value.Dispose(); listeners.Remove(entry.Key); }
+                {
+                    if (gain <= 0 || Environment.TickCount64 >= entry.Value.Until) { entry.Value.Dispose(); listeners.Remove(entry.Key); }
+                    else entry.Value.SetGain(gain);
+                }
             }
             if (stopId != null) StopCapture(stopId);
             await Task.Delay(20, token);
@@ -175,7 +191,11 @@ internal sealed class DeathcommSession : IDisposable
                 lock (gate)
                 {
                     if (listeners.ContainsKey(grantId) || listeners.Count >= 4) continue;
-                    try { listeners.Add(grantId, createPlayback(until)); } catch { /* No output device. */ }
+                    float gain = ReceiveGain();
+                    if (gain <= 0) continue;
+                    IPlayback? player = null;
+                    try { player = createPlayback(until); player.SetGain(gain); listeners.Add(grantId, player); }
+                    catch { player?.Dispose(); /* No output device. */ }
                 }
             }
         }
@@ -255,6 +275,7 @@ internal sealed class DeathcommSession : IDisposable
 internal interface IPlayback : IDisposable
 {
     long Until { get; }
+    void SetGain(float gain);
     void Append(byte[] data, int offset, int length);
 }
 internal interface ICaptureIndicator { void ShowUntil(long value); }
@@ -313,14 +334,17 @@ internal sealed class Playback : IPlayback
 {
     public long Until { get; }
     private readonly BufferedWaveProvider buffer;
+    private readonly VolumeWaveProvider16 volume;
     private readonly WaveOutEvent output;
     public Playback(long until)
     {
         Until = until;
         buffer = new BufferedWaveProvider(new WaveFormat(16000, 16, 1)) { BufferDuration = TimeSpan.FromMilliseconds(100), DiscardOnBufferOverflow = true };
+        volume = new VolumeWaveProvider16(buffer) { Volume = 0 };
         output = new WaveOutEvent { DesiredLatency = 40, NumberOfBuffers = 2 };
-        try { output.Init(buffer); output.Play(); } catch { output.Dispose(); throw; }
+        try { output.Init(volume); output.Play(); } catch { output.Dispose(); throw; }
     }
+    public void SetGain(float gain) => volume.Volume = gain;
     public void Append(byte[] data, int offset, int length) { if (buffer.BufferedBytes <= 2560) buffer.AddSamples(data, offset, length); }
     public void Dispose() { output.Stop(); buffer.ClearBuffer(); output.Dispose(); }
 }
