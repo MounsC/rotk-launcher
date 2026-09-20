@@ -7,13 +7,13 @@ the selected region's voice origin. Plain WS is permitted only on loopback.
 It cannot request a deathcomm or choose a recipient: the server alone issues
 short-lived capture/listen grants after an authoritative kill.
 
-Reception requires the killer's `[Voice] Enable=1` and
-`[VoiceChat] ProximityEnabled=1`. Both `[Voice] ReceiveVolume` (0–100) and
-`[VoiceChat] ProximityVolume` (0–1) scale playback; zero on either mutes it.
-Missing, unreadable or ambiguous settings deny playback. Disabling either chat
-switch or muting either volume closes active playback and discards its buffer;
-unmuting does not resume that reaction. It never activates the killer's microphone.
-The Windows output device and system audio controls still apply.
+Reception is independent of the killer's `[Voice] Enable`,
+`[VoiceChat] ProximityEnabled`, `[Voice] ReceiveVolume` and
+`[VoiceChat] ProximityVolume`. Disabling native chat/proximity or setting either
+receive volume to zero does not prevent or interrupt a server-granted reaction.
+Playback does not read or change `UserOptions.ini`, including when that file is
+missing or unreadable, and never activates the killer's microphone.
+The Windows output device and system audio volume/mute controls still apply.
 
 Automatic transmission requires all of the following:
 
@@ -44,7 +44,8 @@ to install .NET. The normal build/release workflow rebuilds and packages it.
 `scripts/build-deathcomm.ps1 -DotnetPath <sdk-path>` supports a separate SDK.
 
 - `npm run test:deathcomm`: real WebSocket frames with fake audio devices;
-  disabled mic, chat/proximity switches and volumes, authorized capture, live mute,
+  disabled mic, reception with native chat/proximity off or volumes at zero,
+  preference changes during playback, authorized capture, live microphone mute,
   deadlines, invalid/late audio and playback cleanup. It never opens a physical mic.
 - `npm exec -- vitest run tests/deathcomm-client.test.ts
   tests/diagnostic-game-lifecycle.test.ts tests/runtime-config.test.ts
@@ -53,6 +54,8 @@ to install .NET. The normal build/release workflow rebuilds and packages it.
 - `npm run typecheck` and a self-contained Release publish pass locally.
 
 Both the corresponding server and its nginx WebSocket route are required.
+The server transport is already implemented in `h1z1rotk/returnoftheking#575`;
+no additional server protocol change is needed for independent reception.
 Both players need the updated launcher. Existing launchers retain their current
 behavior; this feature does not change the minimum launcher version or force
 players to update. No production launcher release is performed here. Two running game clients
