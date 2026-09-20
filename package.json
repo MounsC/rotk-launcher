@@ -1,6 +1,6 @@
 {
   "name": "rotk-launcher",
-  "version": "2.0.16",
+  "version": "2.0.17",
   "description": "Open-source launcher for Return of the King",
   "author": "Return of the King contributors",
   "license": "GPL-3.0-or-later",
@@ -115,7 +115,13 @@
       "THIRD_PARTY_NOTICES.md"
     ],
     "extraResources": [
-      { "from": "resources/deathcomm", "to": "deathcomm", "filter": ["RotkDeathcomm.exe"] },
+      {
+        "from": "resources/deathcomm",
+        "to": "deathcomm",
+        "filter": [
+          "RotkDeathcomm.exe"
+        ]
+      },
       {
         "from": "resources/patches",
         "to": "patches",

@@ -1,26 +1,12 @@
-using System.Globalization;
-
 namespace RotkDeathcomm;
 
 internal static class VoicePolicy
 {
-    // Both native switches must permit proximity chat. Missing or duplicate
-    // settings cannot authorize the separate deathcomm audio path.
+    // Both native switches must permit automatic microphone capture. Missing
+    // or duplicate settings cannot authorize capture; reception is independent.
     public static bool ChatEnabled(string text) =>
         ReadSetting(text, "Voice", "Enable") == "1" &&
         ReadSetting(text, "VoiceChat", "ProximityEnabled") == "1";
-
-    public static float ReceiveGain(string text)
-    {
-        if (!ChatEnabled(text) ||
-            !TryLevel(ReadSetting(text, "Voice", "ReceiveVolume"), 100, out double receive) ||
-            !TryLevel(ReadSetting(text, "VoiceChat", "ProximityVolume"), 1, out double proximity)) return 0;
-        return (float)(receive / 100 * proximity);
-    }
-
-    private static bool TryLevel(string? value, double maximum, out double level) =>
-        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out level) &&
-        double.IsFinite(level) && level > 0 && level <= maximum;
 
     internal static string? ReadSetting(string text, string section, string key)
     {
